@@ -1,6 +1,11 @@
 #include "../include/SerialDataReceiver.h"
+#include "SerialDataReceiver.h"
 
-SerialDataReceiver::SerialDataReceiver(const char* port, int baudRate, int *status)
+/// @brief Constructor
+/// @param port Path to the serial port (e.g. "/dev/ttyUSB0").
+/// @param baudRate Baud Rate.
+/// @param status A pointer to the status int, outputs 0 when an error occures.
+SerialDataReceiver::SerialDataReceiver(const char *port, int baudRate, int *status)
 {
   SerialDataReceiver::port = port;
   SerialDataReceiver::baudRate = baudRate;
@@ -9,8 +14,11 @@ SerialDataReceiver::SerialDataReceiver(const char* port, int baudRate, int *stat
 
 SerialDataReceiver::~SerialDataReceiver()
 {
+  closePort();
 }
 
+/// @brief Opens the Serial port for reading.
+/// @return Result - 0 if success.
 int SerialDataReceiver::openPort()
 {
   SerialDataReceiver::serial_fd_ = open(port, O_RDWR); // Adjust the device path if needed
@@ -61,9 +69,11 @@ void SerialDataReceiver::closePort()
   close(SerialDataReceiver::serial_fd_);
 }
 
+/// @brief Subroutine task to read the data from the serial port. openPort() should be called before.
 void SerialDataReceiver::receiveData()
 {
-  if(*status != 0) {
+  if (*status != 0)
+  {
     return;
   }
   int byte_count = 512;
@@ -117,33 +127,9 @@ void SerialDataReceiver::receiveData()
       }
       else
       {
-        auto str = std::string(buffer).substr(1, sizeof(buffer) - 2);
-
-        std::stringstream ss(str);
-        std::string temp;
-        std::vector<uint16_t> numbers;
-        int num;
-
-        while (std::getline(ss, temp, ','))
+        std::vector<uint16_t> numbers = extractData(buffer);
+        if (numbers.size() == 4)
         {
-          if (std::stringstream(temp) >> num)
-          {
-            numbers.push_back(num);
-          }
-        }
-        int error = 0;
-        for (auto &element : numbers)
-        {
-          if (element > 4096)
-          {
-            error++;
-            SerialDataReceiver::errorCount++;
-            element = 4095;
-          }
-        }
-        if (numbers.size() == 4 && error == 0)
-        {
-
           int current_values = numbers.at(0) + numbers.at(1) + numbers.at(2) + numbers.at(3);
           data.clear();
           for (int i = 0; i < 4; i++)
@@ -156,6 +142,10 @@ void SerialDataReceiver::receiveData()
             last_values = current_values;
           }
         }
+        else
+        {
+          SerialDataReceiver::errorCount++;
+        }
       }
       m.unlock();
     }
@@ -163,12 +153,48 @@ void SerialDataReceiver::receiveData()
   *status = 1;
 }
 
+/// @brief Gets the current sampling rate per second.
+/// @return Samples per second.
 int SerialDataReceiver::getSampleRate() const
 {
   return sampleRate;
 }
 
+/// @brief Gets the error count in the reading of data.
+/// @return number of errors.
 int SerialDataReceiver::getErrorCount() const
 {
   return errorCount;
+}
+
+std::vector<uint16_t> SerialDataReceiver::extractData(char buffer[])
+{
+
+  std::vector<uint16_t> numbers;
+  auto str = std::string(buffer).substr(1, strlen(buffer) - 2);
+
+  std::stringstream ss(str);
+  std::string temp;
+  int num;
+
+  while (std::getline(ss, temp, ','))
+  {
+    if (std::stringstream(temp) >> num)
+    {
+      numbers.push_back(num);
+    }
+  }
+  int error = 0;
+  for (auto &element : numbers)
+  {
+    if (element > 4095)
+    {
+      error++;
+    }
+  }
+  if (numbers.size() != 4 || error != 0)
+  {
+    numbers.clear();
+  }
+  return numbers;
 }

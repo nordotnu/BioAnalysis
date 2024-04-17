@@ -40,5 +40,6 @@ private:
   int errorCount = 0;
   const char* port;
   struct termios tty_;
+  std::vector<uint16_t> extractData(char buffer[]);
   // ... other data members for configuration and state
 };
