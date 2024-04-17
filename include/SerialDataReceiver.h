@@ -24,11 +24,7 @@ public:
 
   int openPort();
   void closePort();
-
-  // Read and parse data, return parsed values or an error
   void receiveData();
-
-  // Add methods to get statistics
   int getSampleRate() const;
   int getErrorCount() const;
 
@@ -41,5 +37,4 @@ private:
   const char* port;
   struct termios tty_;
   std::vector<uint16_t> extractData(char buffer[]);
-  // ... other data members for configuration and state
 };
