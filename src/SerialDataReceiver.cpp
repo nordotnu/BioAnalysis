@@ -1,35 +1,34 @@
-#include <chrono>
-#include <cstdint>
-#include <cstring>
-#include <errno.h> // For handling errors (errno)
-#include <fcntl.h> // File control definitions
-#include <iomanip>
-#include <iostream>
-#include <sstream>
-#include <string.h>
-#include <string>
-#include <termios.h> // POSIX terminal control definitions
-#include <thread>
-#include <tuple>
-#include <unistd.h> // UNIX standard function definitions
-#include <vector>
+#include "../include/SerialDataReceiver.h"
 
-int main()
+SerialDataReceiver::SerialDataReceiver(const char* port, int baudRate, int *status)
 {
-  int serial_fd = open("/dev/ttyUSB0", O_RDWR); // Adjust the device path if needed
+  SerialDataReceiver::port = port;
+  SerialDataReceiver::baudRate = baudRate;
+  SerialDataReceiver::status = status;
+}
+
+SerialDataReceiver::~SerialDataReceiver()
+{
+}
+
+int SerialDataReceiver::openPort()
+{
+  SerialDataReceiver::serial_fd_ = open(port, O_RDWR); // Adjust the device path if needed
 
   // Error checking
-  if (serial_fd == -1)
+  if (SerialDataReceiver::serial_fd_ == -1)
   {
     std::cerr << "Error opening serial port: " << strerror(errno) << std::endl;
+    *status = -1;
     return -1;
   }
   struct termios tty;
 
   // Get current settings
-  if (tcgetattr(serial_fd, &tty) != 0)
+  if (tcgetattr(SerialDataReceiver::serial_fd_, &tty) != 0)
   {
     std::cerr << "Error from tcgetattr: " << strerror(errno) << std::endl;
+    *status = -1;
     return -1;
   }
 
@@ -48,19 +47,29 @@ int main()
   // tty.c_cc[VMIN] = 0; // Non-blocking read
 
   // Apply settings
-  if (tcsetattr(serial_fd, TCSANOW, &tty) != 0)
+  if (tcsetattr(SerialDataReceiver::serial_fd_, TCSANOW, &tty) != 0)
   {
     std::cerr << "Error from tcsetattr: " << strerror(errno) << std::endl;
+    *status = -1;
     return -1;
+  }
+  return 0;
+}
+
+void SerialDataReceiver::closePort()
+{
+  close(SerialDataReceiver::serial_fd_);
+}
+
+void SerialDataReceiver::receiveData()
+{
+  if(*status != 0) {
+    return;
   }
   int byte_count = 512;
   char buffer[byte_count];
   char ack[] = {'A'};
-  bool sync = true;
-  // Current sample rate (Unique)
-  int sample_rate = 0;
   u_long total_samples = 1;
-  int error_count = 0;
   int samples = 0;
   int last_values = 0;
 
@@ -78,30 +87,36 @@ int main()
     {
       rate_start = rate_current;
       total_samples += samples;
-      sample_rate = samples;
+      SerialDataReceiver::sampleRate = samples;
       samples = 0;
     }
-    if (elapsed_time.count() >= 1)
+    if (elapsed_time.count() >= 2)
     {
+      m.lock();
       start_time = current_time; // Reset the timer
 
-      int bytes_read = read(serial_fd, buffer, sizeof(buffer));
+      int bytes_read = read(SerialDataReceiver::serial_fd_, buffer, sizeof(buffer));
       if (bytes_read < 0)
       {
         std::cerr << "Error reading from serial port: " << strerror(errno) << std::endl;
-        return -1;
+        *status = -1;
+        return;
       }
 
       // Force synchronize the serial data with forcing the device to flush the serial buffer.
       if (buffer[0] != 'S')
       {
-        sync = false;
         std::this_thread::sleep_for(std::chrono::milliseconds(rand() % 10 - 20));
-        int bytes_read = read(serial_fd, buffer, sizeof(buffer));
+        int bytes_read = read(SerialDataReceiver::serial_fd_, buffer, sizeof(buffer));
+        if (bytes_read < 0)
+        {
+          std::cerr << "Error reading from serial port: " << strerror(errno) << std::endl;
+          *status = -1;
+          return;
+        }
       }
       else
       {
-        sync = true;
         auto str = std::string(buffer).substr(1, sizeof(buffer) - 2);
 
         std::stringstream ss(str);
@@ -122,33 +137,38 @@ int main()
           if (element > 4096)
           {
             error++;
-            error_count++;
+            SerialDataReceiver::errorCount++;
             element = 4095;
           }
         }
-        if (error >= 1) {
-          numbers.clear();
-        }
-        try
+        if (numbers.size() == 4 && error == 0)
         {
 
-          printf("A: %04u, B: %4u, C: %04u, D: %04u (R=%d), (E=%5d), bytes=%d\n", numbers.at(0), numbers.at(1), numbers.at(2), numbers.at(3), sample_rate, error_count, bytes_read);
-
-          std::cout << "\033[1A"
-                    << "\033[K";
           int current_values = numbers.at(0) + numbers.at(1) + numbers.at(2) + numbers.at(3);
+          data.clear();
+          for (int i = 0; i < 4; i++)
+          {
+            SerialDataReceiver::data.push_back(numbers.at(i));
+          }
           if (current_values != last_values)
           {
             samples++;
             last_values = current_values;
           }
         }
-        catch (const std::exception &e)
-        {
-          sync = false;
-        }
       }
+      m.unlock();
     }
   }
-  close(serial_fd);
+  *status = 1;
+}
+
+int SerialDataReceiver::getSampleRate() const
+{
+  return sampleRate;
+}
+
+int SerialDataReceiver::getErrorCount() const
+{
+  return errorCount;
 }

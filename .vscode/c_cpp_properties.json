@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "intelliSenseMode": "linux-gcc-x64",
+            "cppStandard": "c++23",
+            "cStandard": "c23",
+            "compilerArgs": [
+                "-pthread"
+            ]
+        }
+    ],
+    "version": 4
+}
