@@ -1,19 +1,20 @@
 #include "EMGFilter.h"
 
-EMGFilter::EMGFilter(std::vector<uint16_t> *rawData, std::mutex *rawMutex, int *status, int dataCount, int samplesPerSec)
+EMGFilter::EMGFilter(SerialDataReceiver *sdr, int *status, int dataCount, int targetFilterRate, int targetRawRate)
 {
-  EMGFilter::rawData = rawData;
-  EMGFilter::rawMutex = rawMutex;
+  EMGFilter::sdr = sdr;
   EMGFilter::status = status;
   EMGFilter::dataCount = dataCount;
-  EMGFilter::samplesPerSec = samplesPerSec;
+  EMGFilter::targetFilterRate = targetFilterRate;
+  EMGFilter::targetRawRate = targetRawRate;
 }
 
 EMGFilter::~EMGFilter()
 {
+  *status = -1;
 }
 
-void EMGFilter::filterData()
+int EMGFilter::filterDataTask()
 {
   std::vector<double> temp;
   for (size_t i = 0; i < dataCount; i++)
@@ -21,58 +22,60 @@ void EMGFilter::filterData()
     temp.push_back(0);
     data.push_back(0);
   }
-
-  int samples = 0;
+  int currentFilterRate = 0;
+  int currentRawSamples= 0;
   int count = 0;
-  auto start_time = std::chrono::high_resolution_clock::now();
-  auto rate_start = std::chrono::high_resolution_clock::now();
-
-  printf("status=%d, dataCount=%d", *status, dataCount);
+  auto startFilter= std::chrono::high_resolution_clock::now();
+  auto startRaw = std::chrono::high_resolution_clock::now();
+  auto startRate = std::chrono::high_resolution_clock::now();
   while (*status == 0)
   {
-    auto rate_current = std::chrono::high_resolution_clock::now();
-    auto rate_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(rate_current - rate_start);
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    auto elapsedFilter = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startFilter);
+    auto elapsedRaw = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startRaw);
+    auto elapsedRate = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startRate);
 
-    auto current_time = std::chrono::high_resolution_clock::now();
-    auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time);
-    if (rate_elapsed.count() >= 1000)
+    if (elapsedRate.count() >= 1000)
     {
-      rate_start = rate_current;
-      EMGFilter::filterRate = samples;
-      samples = 0;
+      startRate = currentTime;
+      filterRate = currentFilterRate;
+      rawRate = currentRawSamples;
+      currentFilterRate = 0;
+      currentRawSamples = 0;
+
     }
-    if (elapsed_time.count() >= 2)
+    if (elapsedRaw.count() >= (1000/targetRawRate))
     {
-      const std::lock_guard<std::mutex> lock(*rawMutex);
-
-      if (rawData->size() == 4)
+      startRaw = currentTime;
+      std::vector<uint16_t> raw = sdr->receiveData();
+    
+      if (raw.size() == 4)
       {
         for (size_t i = 0; i < dataCount; i++)
         {
 
-          temp.at(i) += pow(rawData->at(i), 2);
+          temp.at(i) += pow(raw.at(i), 2);
         }
-
         count++;
+        currentRawSamples++;
       }
     }
-    if (count >= (35 * samplesPerSec))
+    if (elapsedFilter.count() >= (1000/ targetFilterRate))
     {
+      currentFilterRate++;
+      startFilter = currentTime;
       const std::lock_guard<std::mutex> lock(filterMutex);
-
-      samples++;
       data.clear();
       for (size_t i = 0; i < dataCount; i++)
       {
         data.push_back(sqrt(temp.at(i) / count));
         temp.at(i) = 0;
       }
+        //printf("A: %d, B: %d, C: %d, D: %d, Raw Sample Rate:%d, Filter Rate:%d\n", (int)data.at(0), (int)data.at(1), (int)data.at(2), (int)data.at(3), rawRate, filterRate);
       count = 0;
     }
-  }
-}
 
-int EMGFilter::getFilterRate() const
-{
-  return filterRate;
+  }
+  printf("STATUS NOT 0\n");
+  return 1;
 }

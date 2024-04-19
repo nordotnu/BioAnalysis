@@ -59,8 +59,6 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD)
   }
 }
 
-
-
 int main()
 {
 
@@ -71,13 +69,10 @@ int main()
   {
     return 1;
   }
+  EMGFilter filter(&sdr, &status);
+  std::thread thread_filter(&EMGFilter::filterDataTask, &filter);
 
-  std::thread thread_sdr(&SerialDataReceiver::receiveData, &sdr);
-
-  std::vector<uint16_t> *pp = &sdr.data;
-  std::mutex *mm = &sdr.m;
-  EMGFilter filter(pp, mm, &status);
-  std::thread thread_filter(&EMGFilter::filterData, &filter);
+  std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
   // Imgui
   glfwSetErrorCallback(glfw_error_callback);
@@ -169,11 +164,12 @@ int main()
 
     ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar);
     ImGui::Checkbox("Show Filtered", &showFiltered);
-    if (ImGui::Button("Restart Device") && status ==0){
+    if (ImGui::Button("Restart Device") && status == 0)
+    {
       status = 1;
     }
     RealtimePlots(vva, vvb, vvc, vvd);
-    ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz, filtered=%d", sdr.getSampleRate(), filter.getFilterRate(), showFiltered);
+    ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz, filtered=%d", filter.rawRate, filter.filterRate, showFiltered);
     ImGui::Text("Status: %d", status);
 
     ImGui::End();
@@ -200,8 +196,8 @@ int main()
 
     glfwSwapBuffers(window);
   }
-  status = 1;
-  sdr.closePort();
+
+  status = -1;
 
   // Cleanup
   ImGui_ImplOpenGL3_Shutdown();
@@ -211,4 +207,9 @@ int main()
 
   glfwDestroyWindow(window);
   glfwTerminate();
+
+  status = -1;
+  sdr.closePort();
+  thread_filter.detach();
+  return 0;
 }

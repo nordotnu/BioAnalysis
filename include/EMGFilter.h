@@ -1,4 +1,5 @@
 #pragma once
+#include <SerialDataReceiver.h>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -14,17 +15,17 @@ class EMGFilter
 public:
   std::mutex filterMutex;
   std::vector<double> data;
-  EMGFilter(std::vector<uint16_t> *rawData, std::mutex *rawMutex, int *status, int dataCount = 4, int samplesPerSec = 100);
+  int filterRate;
+  int rawRate;
+  EMGFilter(SerialDataReceiver *sdr, int *status, int dataCount = 4, int targetFilterRate = 100, int targetRawRate = 500);
   ~EMGFilter();
 
-  void filterData();
-  int getFilterRate() const;
+  int filterDataTask();
 
 private:
-  std::vector<uint16_t> *rawData;
-  std::mutex *rawMutex;
+  SerialDataReceiver *sdr;
   int dataCount;
   int *status;
-  int filterRate;
-  int samplesPerSec;
+  int targetFilterRate;
+  int targetRawRate;
 };
