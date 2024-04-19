@@ -16,7 +16,6 @@ static void glfw_error_callback(int error, const char *description)
 // utility structure for realtime plot
 struct RollingBuffer
 {
-  int index = 0;
   float Span;
   ImVector<ImVec2> Data;
   RollingBuffer()
@@ -72,7 +71,6 @@ int main()
   EMGFilter filter(&sdr, &status);
   std::thread thread_filter(&EMGFilter::filterDataTask, &filter);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
   // Imgui
   glfwSetErrorCallback(glfw_error_callback);
@@ -93,7 +91,7 @@ int main()
   ImPlot::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
   (void)io;
-  io.Fonts->AddFontFromFileTTF("../fonts/inter.ttf", 20.0f);
+  io.Fonts->AddFontFromFileTTF("inter.ttf", 20.0f);
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
@@ -132,9 +130,7 @@ int main()
 
     if (status == 0)
     {
-      if (showFiltered)
-      {
-
+      
         bool locked = filter.filterMutex.try_lock();
         if (locked)
         {
@@ -145,31 +141,16 @@ int main()
         }
 
         filter.filterMutex.unlock();
-      }
-      else
-      {
-
-        bool locked = sdr.m.try_lock();
-        if (locked && sdr.data.size() == 4)
-        {
-          vva = (float)sdr.data.at(0);
-          vvb = (float)sdr.data.at(1);
-          vvc = (float)sdr.data.at(2);
-          vvd = (float)sdr.data.at(3);
-        }
-
-        sdr.m.unlock();
-      }
     }
 
     ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar);
-    ImGui::Checkbox("Show Filtered", &showFiltered);
-    if (ImGui::Button("Restart Device") && status == 0)
+    ImGui::SliderInt("Target Filter Rate", &filter.targetFilterRate, 10, 500);
+    if (ImGui::Button("Close Port") && status == 0)
     {
-      status = 1;
+      sdr.closePort();
     }
     RealtimePlots(vva, vvb, vvc, vvd);
-    ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz, filtered=%d", filter.rawRate, filter.filterRate, showFiltered);
+    ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz", filter.rawRate, filter.filterRate);
     ImGui::Text("Status: %d", status);
 
     ImGui::End();
@@ -198,18 +179,17 @@ int main()
   }
 
   status = -1;
+  sdr.closePort();
 
   // Cleanup
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImPlot::DestroyContext();
   ImGui::DestroyContext();
-
   glfwDestroyWindow(window);
   glfwTerminate();
-
-  status = -1;
-  sdr.closePort();
-  thread_filter.detach();
+  
+  thread_filter.join();
   return 0;
+
 }
