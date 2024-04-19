@@ -1,11 +1,11 @@
-#include "../include/SerialDataReceiver.h"
+
 #include "SerialDataReceiver.h"
 
 /// @brief Constructor
 /// @param port Path to the serial port (e.g. "/dev/ttyUSB0").
 /// @param baudRate Baud Rate.
 /// @param status A pointer to the status int, outputs 0 when an error occures.
-SerialDataReceiver::SerialDataReceiver(const char *port, int baudRate, int *status)
+SerialDataReceiver::SerialDataReceiver(const char *port, speed_t baudRate, int *status)
 {
   SerialDataReceiver::port = port;
   SerialDataReceiver::baudRate = baudRate;
@@ -41,8 +41,8 @@ int SerialDataReceiver::openPort()
   }
 
   // Configure settings
-  cfsetospeed(&tty, B921600); // Set baud rate
-  cfsetispeed(&tty, B921600);
+  cfsetospeed(&tty, baudRate); // Set baud rate
+  cfsetispeed(&tty, baudRate);
 
   // Other common settings if needed:
   // tty.c_cflag &= ~PARENB;        // No parity
@@ -52,7 +52,8 @@ int SerialDataReceiver::openPort()
   // tty.c_cflag &= ~CRTSCTS;       // Disable hardware flow control
   // tty.c_lflag &= ~ICANON; // Disable canonical mode (read line-by-line)
   // tty.c_cc[VTIME] = 1;   // Read timeout of 1 second
-  // tty.c_cc[VMIN] = 0; // Non-blocking read
+  //tty.c_cc[VMIN] = 0; // Non-blocking read
+  
 
   // Apply settings
   if (tcsetattr(SerialDataReceiver::serial_fd_, TCSANOW, &tty) != 0)
@@ -66,7 +67,9 @@ int SerialDataReceiver::openPort()
 
 void SerialDataReceiver::closePort()
 {
-  close(SerialDataReceiver::serial_fd_);
+  *status = -1;
+  int closed = close(SerialDataReceiver::serial_fd_);
+  printf("Closed = %d", closed);
 }
 
 /// @brief Subroutine task to read the data from the serial port. openPort() should be called before.
@@ -78,14 +81,13 @@ void SerialDataReceiver::receiveData()
   }
   int byte_count = 512;
   char buffer[byte_count];
-  char ack[] = {'A'};
   u_long total_samples = 1;
   int samples = 0;
   int last_values = 0;
 
   auto start_time = std::chrono::high_resolution_clock::now();
   auto rate_start = std::chrono::high_resolution_clock::now();
-  for (;;)
+  while (*status == 0)
   {
 
     auto rate_current = std::chrono::high_resolution_clock::now();
@@ -102,10 +104,12 @@ void SerialDataReceiver::receiveData()
     }
     if (elapsed_time.count() >= 2)
     {
-      m.lock();
+      // m.lock();
+      const std::lock_guard<std::mutex> lock(m);
       start_time = current_time; // Reset the timer
 
       int bytes_read = read(SerialDataReceiver::serial_fd_, buffer, sizeof(buffer));
+
       if (bytes_read < 0)
       {
         std::cerr << "Error reading from serial port: " << strerror(errno) << std::endl;
@@ -113,17 +117,10 @@ void SerialDataReceiver::receiveData()
         return;
       }
 
-      // Force synchronize the serial data with forcing the device to flush the serial buffer.
       if (buffer[0] != 'S')
       {
-        std::this_thread::sleep_for(std::chrono::milliseconds(rand() % 10 - 20));
-        int bytes_read = read(SerialDataReceiver::serial_fd_, buffer, sizeof(buffer));
-        if (bytes_read < 0)
-        {
-          std::cerr << "Error reading from serial port: " << strerror(errno) << std::endl;
-          *status = -1;
-          return;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(rand() % 100 - 200));
+        
       }
       else
       {
@@ -147,10 +144,22 @@ void SerialDataReceiver::receiveData()
           SerialDataReceiver::errorCount++;
         }
       }
-      m.unlock();
+      // m.unlock();
     }
   }
-  *status = 1;
+  // closePort();
+}
+
+int SerialDataReceiver::restartDevice()
+{
+  const char ack = 'R';
+  int bytes_write = write(SerialDataReceiver::serial_fd_, &ack, 1);
+  if (bytes_write < 0)
+  {
+    std::cerr << "Error writing to serial port: " << strerror(errno) << std::endl;
+    return -1;
+  }
+  return 0;
 }
 
 /// @brief Gets the current sampling rate per second.

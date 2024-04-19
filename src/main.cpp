@@ -1,7 +1,8 @@
-#include "../include/SerialDataReceiver.h"
-#include "../lib/imgui/imgui.h"
-#include "../lib/imgui/imgui_impl_glfw.h"
-#include "../lib/imgui/imgui_impl_opengl3.h"
+#include "EMGFilter.h"
+#include "SerialDataReceiver.h"
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
 #include "implot.h"
 #include "math.h"
 #include "string"
@@ -15,12 +16,13 @@ static void glfw_error_callback(int error, const char *description)
 // utility structure for realtime plot
 struct RollingBuffer
 {
+  int index = 0;
   float Span;
   ImVector<ImVec2> Data;
   RollingBuffer()
   {
     Span = 10.0f;
-    Data.reserve(2000);
+    Data.reserve(1000);
   }
   void AddPoint(float x, float y)
   {
@@ -57,38 +59,25 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD)
   }
 }
 
+
+
 int main()
 {
 
   // Serial data receiver.
   int status = 0;
-  SerialDataReceiver sdr("/dev/ttyUSB0", 123, &status);
-  sdr.openPort();
-  std::thread thread_obj(&SerialDataReceiver::receiveData, &sdr);
-  if (status != 0)
+  SerialDataReceiver sdr("/dev/ttyUSB0", B921600, &status);
+  if (sdr.openPort() != 0)
   {
-    return -1;
+    return 1;
   }
 
-  /*
-    auto startTime = std::chrono::high_resolution_clock::now();
-    while (status == 0)
-    {
-      auto currentTime = std::chrono::high_resolution_clock::now();
-      auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime);
-      if (elapsedTime.count() >= 2)
-      {
-        startTime = currentTime;
-        sdr.m.lock();
-        if (sdr.data.size() == 4)
-        {
-          printf("A: %04u, B: %4u, C: %04u, D: %04u (R=%d), ERROR=%d, status=%d\n", sdr.data.at(0), sdr.data.at(1), sdr.data.at(2), sdr.data.at(3), sdr.getSampleRate(), sdr.getErrorCount(), status);
-          std::cout << "\033[1A"
-                    << "\033[K";
-        }
-        sdr.m.unlock();
-      }
-    }*/
+  std::thread thread_sdr(&SerialDataReceiver::receiveData, &sdr);
+
+  std::vector<uint16_t> *pp = &sdr.data;
+  std::mutex *mm = &sdr.m;
+  EMGFilter filter(pp, mm, &status);
+  std::thread thread_filter(&EMGFilter::filterData, &filter);
 
   // Imgui
   glfwSetErrorCallback(glfw_error_callback);
@@ -99,21 +88,21 @@ int main()
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
-  GLFWwindow *window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", nullptr, nullptr);
+  GLFWwindow *window = glfwCreateWindow(1280, 720, "BioAnalysis", nullptr, nullptr);
   if (window == nullptr)
     return 1;
   glfwMakeContextCurrent(window);
   glfwSwapInterval(1); // Enable vsync
-  ImGui::CreateContext();
 
+  ImGui::CreateContext();
   ImPlot::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
   (void)io;
+  io.Fonts->AddFontFromFileTTF("../fonts/inter.ttf", 20.0f);
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
-                                                        // io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
-  // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
-  // io.Fonts->AddFontFromFileTTF("inter.ttf", 20.0f);
+  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
+  io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
   // Setup Dear ImGui style
   ImGui::StyleColorsClassic();
 
@@ -131,6 +120,8 @@ int main()
 
   ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.0f, 1.00f);
 
+  bool showFiltered = true;
+
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
@@ -139,26 +130,51 @@ int main()
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    float va = 0.0f;
-    float vb = 0.0f;
-    float vc = 0.0f;
-    float vd = 0.0f;
+    float vva = 0.0f;
+    float vvb = 0.0f;
+    float vvc = 0.0f;
+    float vvd = 0.0f;
+
     if (status == 0)
     {
-      sdr.m.lock();
-      if (sdr.data.size() == 4)
+      if (showFiltered)
       {
-        va = (float)sdr.data.at(0);
-        vb = (float)sdr.data.at(1);
-        vc = (float)sdr.data.at(2);
-        vd = (float)sdr.data.at(3);
+
+        bool locked = filter.filterMutex.try_lock();
+        if (locked)
+        {
+          vva = (float)filter.data.at(0);
+          vvb = (float)filter.data.at(1);
+          vvc = (float)filter.data.at(2);
+          vvd = (float)filter.data.at(3);
+        }
+
+        filter.filterMutex.unlock();
       }
-      sdr.m.unlock();
+      else
+      {
+
+        bool locked = sdr.m.try_lock();
+        if (locked && sdr.data.size() == 4)
+        {
+          vva = (float)sdr.data.at(0);
+          vvb = (float)sdr.data.at(1);
+          vvc = (float)sdr.data.at(2);
+          vvd = (float)sdr.data.at(3);
+        }
+
+        sdr.m.unlock();
+      }
     }
 
-    ImGui::Begin("My Window", nullptr, ImGuiWindowFlags_NoTitleBar);
-    Demo_RealtimePlots(va, vb, vc, vd);
-    ImGui::Text("Sampling Rate: %d Hz", sdr.getSampleRate());
+    ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar);
+    ImGui::Checkbox("Show Filtered", &showFiltered);
+    if (ImGui::Button("Restart Device") && status ==0){
+      status = 1;
+    }
+    RealtimePlots(vva, vvb, vvc, vvd);
+    ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz, filtered=%d", sdr.getSampleRate(), filter.getFilterRate(), showFiltered);
+    ImGui::Text("Status: %d", status);
 
     ImGui::End();
 
@@ -184,6 +200,8 @@ int main()
 
     glfwSwapBuffers(window);
   }
+  status = 1;
+  sdr.closePort();
 
   // Cleanup
   ImGui_ImplOpenGL3_Shutdown();
@@ -193,6 +211,4 @@ int main()
 
   glfwDestroyWindow(window);
   glfwTerminate();
-
-  sdr.closePort();
 }

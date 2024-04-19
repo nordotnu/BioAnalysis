@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.28.0)
 project(bioanalysis VERSION 0.1.0 LANGUAGES C CXX)
 FILE(GLOB imgui_sources lib/imgui/*.cpp)
 FILE(GLOB implot_sources lib/implot/*.cpp)
-add_executable( bioanalysis src/main.cpp src/SerialDataReceiver.cpp ${imgui_sources} ${implot_sources}) # put your cpp files in a src/ directory
+FILE(GLOB sources src/*.cpp)
+add_executable( bioanalysis ${sources} ${imgui_sources} ${implot_sources}) # put your cpp files in a src/ directory
 target_include_directories( bioanalysis PUBLIC include lib/imgui lib/implot) # put the headers in an include/ directory
 target_compile_features( bioanalysis PUBLIC cxx_std_23 )
 

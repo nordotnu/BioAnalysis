@@ -19,17 +19,18 @@ class SerialDataReceiver
 public:
   std::mutex m;
   std::vector<uint16_t> data;
-  SerialDataReceiver(const char* port, int baudRate, int* status);
+  SerialDataReceiver(const char* port, speed_t baudRate, int* status);
   ~SerialDataReceiver();
 
   int openPort();
   void closePort();
   void receiveData();
+  int restartDevice();
   int getSampleRate() const;
   int getErrorCount() const;
 
 private:
-  int baudRate;
+  speed_t baudRate;
   int* status;
   int serial_fd_;
   int sampleRate = 0;
