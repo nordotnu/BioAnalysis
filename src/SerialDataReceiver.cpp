@@ -5,9 +5,8 @@
 /// @param port Path to the serial port (e.g. "/dev/ttyUSB0").
 /// @param baudRate Baud Rate.
 /// @param status A pointer to the status int, outputs 0 when an error occures.
-SerialDataReceiver::SerialDataReceiver(const char *port, speed_t baudRate, int *status)
+SerialDataReceiver::SerialDataReceiver( speed_t baudRate, int *status)
 {
-  SerialDataReceiver::port = port;
   SerialDataReceiver::baudRate = baudRate;
   SerialDataReceiver::status = status;
 }
@@ -15,6 +14,11 @@ SerialDataReceiver::SerialDataReceiver(const char *port, speed_t baudRate, int *
 SerialDataReceiver::~SerialDataReceiver()
 {
   //closePort();
+}
+
+void SerialDataReceiver::setPort(const char *port)
+{
+  SerialDataReceiver::port = port;
 }
 
 /// @brief Opens the Serial port for reading.
@@ -49,10 +53,10 @@ int SerialDataReceiver::openPort()
   // tty.c_cflag &= ~CSTOPB; // One stop bit
   // tty.c_cflag &= ~CSIZE;         // Clear character size bits
   // tty.c_cflag |= CS8; // 8 bits per byte
-  // tty.c_cflag &= ~CRTSCTS;       // Disable hardware flow control
+   tty.c_cflag &= ~CRTSCTS;       // Disable hardware flow control
   // tty.c_lflag &= ~ICANON; // Disable canonical mode (read line-by-line)
-  // tty.c_cc[VTIME] = 1;   // Read timeout of 1 second
-  // tty.c_cc[VMIN] = 0; // Non-blocking read
+   tty.c_cc[VTIME] = 1;   // Read timeout of 1 second
+   //tty.c_cc[VMIN] = 0; // Non-blocking read
 
   // Apply settings
   if (tcsetattr(SerialDataReceiver::serial_fd_, TCSANOW, &tty) != 0)
@@ -61,6 +65,7 @@ int SerialDataReceiver::openPort()
     *status = -1;
     return -1;
   }
+  *status = 0;
   return 0;
 }
 

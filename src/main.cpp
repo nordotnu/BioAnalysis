@@ -7,6 +7,9 @@
 #include "math.h"
 #include "string"
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
+#include <filesystem>
+#include <fstream>
+#include <iostream>
 
 static void glfw_error_callback(int error, const char *description)
 {
@@ -58,19 +61,40 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD)
   }
 }
 
+std::vector<std::string> listPorts()
+{
+  std::vector<std::string> ports;
+  std::string path = "/dev";
+  for (const auto &entry : std::filesystem::directory_iterator(path))
+  {
+    if (entry.path().filename().string().substr(0, 6).contains("ttyUSB"))
+    {
+
+      std::cout << "Port:" << entry.path().string() << std::endl;
+      ports.push_back(entry.path().string());
+    }
+  }
+  return ports;
+}
+
 int main()
 {
 
-  // Serial data receiver.
-  int status = 0;
-  SerialDataReceiver sdr("/dev/ttyUSB0", B921600, &status);
-  if (sdr.openPort() != 0)
-  {
-    return 1;
-  }
-  EMGFilter filter(&sdr, &status);
-  std::thread thread_filter(&EMGFilter::filterDataTask, &filter);
+  std::vector<std::string> portList = listPorts();
+  std::vector<const char *> availablePorts;
+  for (int i = 0; i < portList.size(); ++i)
+    availablePorts.push_back(portList[i].c_str());
 
+  bool connected = false;
+  int status = -1;
+  int finger = 0;
+
+  SerialDataReceiver sdr(B921600, &status);
+
+  EMGFilter filter(&sdr, &connected);
+
+  std::thread thread_filter(&EMGFilter::filterDataTask, &filter, 12);
+  thread_filter.detach();
 
   // Imgui
   glfwSetErrorCallback(glfw_error_callback);
@@ -92,11 +116,11 @@ int main()
   ImGuiIO &io = ImGui::GetIO();
   (void)io;
   io.Fonts->AddFontFromFileTTF("inter.ttf", 20.0f);
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
-  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
-  io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
-  // Setup Dear ImGui style
+  // io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+  // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
+  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking
+  // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
+  //  Setup Dear ImGui style
   ImGui::StyleColorsClassic();
 
   // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
@@ -128,32 +152,91 @@ int main()
     float vvc = 0.0f;
     float vvd = 0.0f;
 
-    if (status == 0)
+    if (connected)
     {
-      
-        bool locked = filter.filterMutex.try_lock();
-        if (locked)
-        {
-          vva = (float)filter.data.at(0);
-          vvb = (float)filter.data.at(1);
-          vvc = (float)filter.data.at(2);
-          vvd = (float)filter.data.at(3);
-        }
 
+      bool locked = filter.filterMutex.try_lock();
+      if (locked)
+      {
+        vva = (float)filter.data.at(0);
+        vvb = (float)filter.data.at(1);
+        vvc = (float)filter.data.at(2);
+        vvd = (float)filter.data.at(3);
         filter.filterMutex.unlock();
+      }
     }
 
-    ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar);
-    ImGui::SliderInt("Target Filter Rate", &filter.targetFilterRate, 10, 500);
-    if (ImGui::Button("Close Port") && status == 0)
+    ImGui::Begin("Connection", nullptr, ImGuiWindowFlags_NoTitleBar);
+    int currentPort = 0;
+    ImGui::ListBox("Serial Ports", &currentPort, availablePorts.data(), availablePorts.size());
+    if (!connected && status != 0)
     {
+
+      if (ImGui::Button("Open Port"))
+      {
+        sdr.setPort(availablePorts[currentPort]);
+        if (sdr.openPort() == 0)
+        {
+          connected = true;
+        }
+      }
+    }
+    else if (ImGui::Button("Close Port") && status == 0)
+    {
+      connected = false;
       sdr.closePort();
     }
-    RealtimePlots(vva, vvb, vvc, vvd);
-    ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz", filter.rawRate, filter.filterRate);
-    ImGui::Text("Status: %d", status);
 
     ImGui::End();
+
+    if (connected)
+    {
+
+      ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar);
+      ImGui::SliderInt("Target Filter Rate", &filter.targetFilterRate, 5, 500);
+
+      RealtimePlots(vva, vvb, vvc, vvd);
+      ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz", filter.rawRate, filter.filterRate);
+
+      ImGui::SliderInt("Finger", &finger, 0, 4);
+      if (ImGui::Button("Calibrate") && filter.calibrated)
+      {
+        filter.calibrated = false;
+      }
+      if (ImGui::Button("Save Data") && !filter.saveData)
+      {
+        filter.saveData = true;
+      }
+      if (!filter.saveData && filter.savedData.size() == 500)
+      {
+        std::ofstream outputFile("data.csv");
+        if (outputFile.is_open())
+        {
+
+          for (size_t i = 0; i < filter.savedData.size(); i++)
+          {
+            outputFile << finger << ",";
+            for (size_t j = 0; j < 4; j++)
+            {
+              outputFile << (int)filter.savedData[i][j];
+              if (j != 3)
+              {
+                outputFile << ",";
+              }
+            }
+            outputFile << "\n";
+          }
+          outputFile.close();
+        }
+        else
+        {
+          std::cerr << "Error opening file\n";
+        }
+
+        filter.savedData.clear();
+      }
+      ImGui::End();
+    }
 
     // Rendering
     ImGui::Render();
@@ -177,9 +260,11 @@ int main()
 
     glfwSwapBuffers(window);
   }
-
-  status = -1;
   sdr.closePort();
+  connected = false;
+  status = -1;
+  filter.terminate();
+  // thread_filter.join();
 
   // Cleanup
   ImGui_ImplOpenGL3_Shutdown();
@@ -188,8 +273,8 @@ int main()
   ImGui::DestroyContext();
   glfwDestroyWindow(window);
   glfwTerminate();
-  
-  thread_filter.join();
-  return 0;
 
+  std::terminate();
+
+  return 0;
 }

@@ -1,17 +1,23 @@
 #include "EMGFilter.h"
 
-EMGFilter::EMGFilter(SerialDataReceiver *sdr, int *status, int dataCount, int targetFilterRate, int targetRawRate)
+EMGFilter::EMGFilter(SerialDataReceiver *sdr, bool *connected, int dataCount, int targetFilterRate, int targetRawRate)
 {
   EMGFilter::sdr = sdr;
-  EMGFilter::status = status;
+  EMGFilter::connected = connected;
   EMGFilter::dataCount = dataCount;
   EMGFilter::targetFilterRate = targetFilterRate;
   EMGFilter::targetRawRate = targetRawRate;
+  EMGFilter::terminated = false;
+  EMGFilter::calibrated = false;
 }
 
 EMGFilter::~EMGFilter()
 {
-  *status = -1;
+}
+
+void EMGFilter::terminate()
+{
+  EMGFilter::terminated = true;
 }
 
 int EMGFilter::filterDataTask()
@@ -28,8 +34,15 @@ int EMGFilter::filterDataTask()
   auto startFilter = std::chrono::high_resolution_clock::now();
   auto startRaw = std::chrono::high_resolution_clock::now();
   auto startRate = std::chrono::high_resolution_clock::now();
-  while (*status == 0)
+  while (!terminated)
   {
+
+    if (!*connected)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      continue;
+    }
+
     auto currentTime = std::chrono::high_resolution_clock::now();
     auto elapsedFilter = std::chrono::duration_cast<std::chrono::microseconds>(currentTime - startFilter);
     auto elapsedRaw = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startRaw);
@@ -43,7 +56,7 @@ int EMGFilter::filterDataTask()
       currentFilterRate = 0;
       currentRawSamples = 0;
     }
-    if (elapsedRaw.count() >= (1000 / targetRawRate))
+    if (elapsedRaw.count() >= (1000 / targetRawRate) && *connected)
     {
       startRaw = currentTime;
       std::vector<uint16_t> raw = sdr->receiveData();
@@ -69,18 +82,42 @@ int EMGFilter::filterDataTask()
 
     if (elapsedFilter.count() >= (1e6 / tt))
     {
+      filterMutex.lock();
       currentFilterRate++;
       startFilter = currentTime;
-      const std::lock_guard<std::mutex> lock(filterMutex);
-      data.clear();
-      for (size_t i = 0; i < dataCount; i++)
+      if (!calibrated)
       {
-        data.push_back(sqrt(temp.at(i) / count));
-        temp.at(i) = 0;
+        calibrated = true;
+        calibrationData.clear();
+        for (size_t i = 0; i < dataCount; i++)
+        {
+          double value = sqrt(temp.at(i) / count);
+          calibrationData.push_back(value);
+          temp.at(i) = 0;
+          calibrated = calibrated && (value > 0);
+        }
+      }
+      else
+      {
+        data.clear();
+        for (size_t i = 0; i < dataCount; i++)
+        {
+          double value = sqrt(temp.at(i) / count) / calibrationData.at(i);
+          data.push_back(value);
+          temp.at(i) = 0;
+        }
       }
       count = 0;
+      if (saveData)
+      {
+        savedData.push_back(data);
+        if (savedData.size() >= 500)
+        {
+          saveData = false;
+        }
+      }
+      filterMutex.unlock();
     }
   }
-  printf("STATUS NOT 0\n");
-  return 1;
+  return 0;
 }
