@@ -15,11 +15,14 @@ EMGFilter::~EMGFilter()
 {
 }
 
+/// @brief Terminate the thread (if the class is running on a seperate thread).
 void EMGFilter::terminate()
 {
   EMGFilter::terminated = true;
 }
 
+/// @brief Subroutine to fetch the data from the serialDataReceiver and filter the data.
+/// @return 0 if interupted or finished.
 int EMGFilter::filterDataTask()
 {
   std::vector<double> temp;
@@ -36,7 +39,6 @@ int EMGFilter::filterDataTask()
   auto startRate = std::chrono::high_resolution_clock::now();
   while (!terminated)
   {
-
     if (!*connected)
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));

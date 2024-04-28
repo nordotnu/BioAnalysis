@@ -71,9 +71,7 @@ int SerialDataReceiver::openPort()
 
 void SerialDataReceiver::closePort()
 {
-  printf("Closing port...");
   int closed = close(SerialDataReceiver::serial_fd_);
-  printf("Closed = %d\n", closed);
   *status = -1;
 }
 
@@ -115,6 +113,8 @@ std::vector<uint16_t> SerialDataReceiver::receiveData()
   return numbers;
 }
 
+/// @brief Sends restart command to the device.
+/// @return Whether the command has been sent.
 int SerialDataReceiver::restartDevice()
 {
   const char ack = 'R';
