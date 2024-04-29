@@ -8,23 +8,27 @@
 #include "string"
 #include <fstream>
 #include <iostream>
+#include <vector>
 
 class AppUI : public UserInterface
 {
 private:
-
   bool* connected;
   int* status;
   int finger;
-  bool showFiltered;
+  int dataType;
+  int lastSelected;
+  int trainingSamples;
+  std::vector<std::vector<std::vector<double>>> trainingData;
+  std::vector<std::string> labels;
 
   SerialDataReceiver *sdr;
   EMGFilter *filter;
   std::thread* thread_filter;
   std::vector<const char *> availablePorts;
-
   std::vector<std::string> listPorts();
-
+  void recordingElement();
+  void exportRecordings();
 public:
   AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *sdr, EMGFilter* filter, int* status, bool* connected);
   ~AppUI();

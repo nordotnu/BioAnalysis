@@ -1,4 +1,3 @@
-
 #include "AppUI.h"
 
 struct RollingBuffer
@@ -17,13 +16,24 @@ struct RollingBuffer
       Data.shrink(0);
     Data.push_back(ImVec2(xmod, y));
   }
+  void clear()
+  {
+    Data.shrink(0);
+  }
 };
 
-void RealtimePlots(float valueA, float valueB, float valueC, float valueD)
+void RealtimePlots(float valueA, float valueB, float valueC, float valueD, bool reset = false)
 {
-
   static RollingBuffer va, vb, vc, vd;
   static float t = 0;
+  if (reset)
+  {
+    va.clear();
+    vb.clear();
+    vc.clear();
+    vd.clear();
+    t = 0;
+  }
   t += ImGui::GetIO().DeltaTime;
   va.AddPoint(t, valueA);
   vb.AddPoint(t, valueB);
@@ -52,11 +62,18 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *s
   AppUI::connected = connected;
   AppUI::status = status;
 
-  finger = 0;
-  showFiltered = true;
+  AppUI::dataType = 0;
+  AppUI::lastSelected = 0;
+  AppUI::trainingSamples = 100;
+  std::vector<std::vector<double>> empty;
+  AppUI::trainingData = std::vector<std::vector<std::vector<double>>>(5, empty);
+
+  AppUI::finger = 0;
   std::thread thr(&EMGFilter::filterDataTask, filter);
   AppUI::thread_filter = &thr;
-  thread_filter->detach();
+  AppUI::thread_filter->detach();
+
+  AppUI::labels = {"Resting", "Index", "Middle", "Ring", "Pinky"};
 
   UserInterface::init(window, glsl_version);
 }
@@ -75,6 +92,54 @@ std::vector<std::string> AppUI::listPorts()
   return ports;
 }
 
+void AppUI::recordingElement()
+{
+  if (!filter->savedData.size())
+  {
+
+    ImGui::Text("Record");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
+    ImGui::InputInt("Sample/s", &trainingSamples, 10, 1000);
+    filter->saveDataSize = trainingSamples;
+    ImGui::SameLine();
+    if (ImGui::Button("Record Data") && !filter->saveData)
+      filter->saveData = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Export Recordings"))
+      exportRecordings();
+  }
+  else
+  {
+    ImGui::ProgressBar(float(filter->savedData.size()) / trainingSamples);
+  }
+
+  if (!filter->saveData && filter->savedData.size() == trainingSamples)
+  {
+    trainingData.at(finger).clear();
+    trainingData.at(finger) = filter->savedData;
+    filter->savedData.clear();
+    finger = finger < 4 ? finger + 1 : 0;
+  }
+
+  if (ImGui::BeginTable("table", 2, ImGuiTableFlags_Borders))
+  {
+    ImGui::TableNextColumn();
+    ImGui::Text("Finger");
+    ImGui::TableNextColumn();
+    ImGui::Text("Recorder Samples", ImGui::GetContentRegionAvail().x);
+    for (int n = 0; n < 5; n++)
+    {
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      ImGui::RadioButton(labels.at(n).c_str(), &finger, n);
+      ImGui::TableNextColumn();
+      ImGui::Text("%d", trainingData.at(n).size());
+    }
+    ImGui::EndTable();
+  }
+}
+
 /// @brief Update the contents.
 void AppUI::update()
 {
@@ -84,30 +149,18 @@ void AppUI::update()
   float vvc = 0.0f;
   float vvd = 0.0f;
 
-  if (*connected)
-  {
-    bool locked = filter->filterMutex.try_lock();
-    if (locked)
-    {
-      vva = (float)filter->data.at(0);
-      vvb = (float)filter->data.at(1);
-      vvc = (float)filter->data.at(2);
-      vvd = (float)filter->data.at(3);
-      filter->filterMutex.unlock();
-    }
-  }
-
-  ImGui::Begin("Connection", nullptr, ImGuiWindowFlags_NoTitleBar);
+  ImGui::Begin("Connection", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
   if (!*connected && *status != 0)
   {
     availablePorts.clear();
     std::vector<std::string> portList = listPorts();
     for (int i = 0; i < portList.size(); ++i)
       availablePorts.push_back(portList[i].c_str());
-    
     int currentPort = 0;
-    ImGui::ListBox("Serial Ports", &currentPort, availablePorts.data(), availablePorts.size());
-
+    ImGui::Text("Serial Ports");
+    ImGui::SameLine();
+    ImGui::Combo(" ", &currentPort, availablePorts.data(), availablePorts.size());
+    ImGui::SameLine();
     if (ImGui::Button("Open Port") && availablePorts.size())
     {
       sdr->setPort(availablePorts[currentPort]);
@@ -128,49 +181,53 @@ void AppUI::update()
   if (*connected)
   {
 
-    ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar);
-    ImGui::SliderInt("Target Filter Rate", &filter->targetFilterRate, 5, 500);
+    ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
 
-    RealtimePlots(vva, vvb, vvc, vvd);
-    ImGui::Text("Sampling Rate: %d Hz, Filtering Rate: %d Hz", filter->rawRate, filter->filterRate);
-
-    ImGui::SliderInt("Finger", &finger, 0, 4);
+    ImGui::Text("Target Filter Rate:");
+    ImGui::SameLine();
+    ImGui::SliderInt(" ", &filter->targetFilterRate, 5, 500, "%dHz");
+    ImGui::SameLine();
+    ImGui::Text("Real Rate: %dHz", filter->filterRate);
+    ImGui::Text("Data Type: ");
+    ImGui::SameLine();
+    ImGui::RadioButton("Raw", &dataType, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("RMS", &dataType, 1);
+    ImGui::SameLine();
     if (ImGui::Button("Calibrate") && filter->calibrated)
-    {
       filter->calibrated = false;
-    }
-    if (ImGui::Button("Save Data") && !filter->saveData)
-    {
-      filter->saveData = true;
-    }
-    if (!filter->saveData && filter->savedData.size() == 500)
-    {
-      std::ofstream outputFile("data.csv");
-      if (outputFile.is_open())
-      {
+    ImGui::SameLine();
+    ImGui::RadioButton("WL", &dataType, 2);
 
-        for (size_t i = 0; i < filter->savedData.size(); i++)
-        {
-          outputFile << finger << ",";
-          for (size_t j = 0; j < 4; j++)
-          {
-            outputFile << (int)filter->savedData[i][j];
-            if (j != 3)
-            {
-              outputFile << ",";
-            }
-          }
-          outputFile << "\n";
-        }
-        outputFile.close();
-      }
-      else
+    std::vector<double> data;
+    bool locked = filter->filterMutex.try_lock();
+    if (locked)
+    {
+      switch (dataType)
       {
-        std::cerr << "Error opening file\n";
+      case 0:
+        data = filter->dataRaw;
+        break;
+      case 1:
+        data = filter->dataRMS;
+        break;
+      case 2:
+        data = filter->dataWL;
+        break;
+      default:
+        break;
       }
-
-      filter->savedData.clear();
+      vva = (float)data.at(0);
+      vvb = (float)data.at(1);
+      vvc = (float)data.at(2);
+      vvd = (float)data.at(3);
+      filter->filterMutex.unlock();
     }
+
+    RealtimePlots(vva, vvb, vvc, vvd, lastSelected != dataType);
+    lastSelected = dataType;
+
+    recordingElement();
     ImGui::End();
   }
 }
@@ -188,4 +245,32 @@ void AppUI::shutdown()
   filter->terminate();
 
   UserInterface::shutdown();
+}
+
+void AppUI::exportRecordings()
+{
+  std::ofstream outputFile("data.csv", std::ios::app);
+  if (outputFile.is_open())
+  {
+    for (size_t i = 0; i < trainingData.size(); i++)
+    {
+      std::vector<std::vector<double>> fingerData = trainingData.at(i);
+      for (size_t j = 0; j < fingerData.size(); j++)
+      {
+        outputFile << i << ",";
+        for (size_t k = 0; k < 8; k++)
+        {
+          outputFile << (int)fingerData[j][k];
+          if (k != 7)
+            outputFile << ",";
+        }
+        outputFile << "\n";
+      }
+    }
+    outputFile.close();
+  }
+  else
+  {
+    std::cerr << "Error opening file\n";
+  }
 }

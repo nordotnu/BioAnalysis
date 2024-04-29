@@ -9,6 +9,7 @@ EMGFilter::EMGFilter(SerialDataReceiver *sdr, bool *connected, int dataCount, in
   EMGFilter::targetRawRate = targetRawRate;
   EMGFilter::terminated = false;
   EMGFilter::calibrated = false;
+  EMGFilter::saveData = false;
 }
 
 EMGFilter::~EMGFilter()
@@ -25,16 +26,22 @@ void EMGFilter::terminate()
 /// @return 0 if interupted or finished.
 int EMGFilter::filterDataTask()
 {
-  std::vector<double> temp;
+  std::vector<double> temp = std::vector<double>(dataCount, 0);
+  dataRMS = std::vector<double>(dataCount,0);
+  dataRaw = std::vector<double>(dataCount,0);
+  dataWL = std::vector<double>(dataCount,0);
+  std::vector<std::vector<uint16_t>> raws;
   for (size_t i = 0; i < dataCount; i++)
   {
     temp.push_back(0);
-    data.push_back(0);
+    dataRMS.push_back(0);
+    dataWL.push_back(0);
   }
   int currentFilterRate = 0;
   int currentRawSamples = 0;
   int count = 0;
   auto startFilter = std::chrono::high_resolution_clock::now();
+  auto startWave = std::chrono::high_resolution_clock::now();
   auto startRaw = std::chrono::high_resolution_clock::now();
   auto startRate = std::chrono::high_resolution_clock::now();
   while (!terminated)
@@ -47,9 +54,11 @@ int EMGFilter::filterDataTask()
 
     auto currentTime = std::chrono::high_resolution_clock::now();
     auto elapsedFilter = std::chrono::duration_cast<std::chrono::microseconds>(currentTime - startFilter);
+    auto elapsedWave = std::chrono::duration_cast<std::chrono::microseconds>(currentTime - startWave);
     auto elapsedRaw = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startRaw);
     auto elapsedRate = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startRate);
 
+    // Calculate the real sample rate.
     if (elapsedRate.count() >= 1000)
     {
       startRate = currentTime;
@@ -58,6 +67,7 @@ int EMGFilter::filterDataTask()
       currentFilterRate = 0;
       currentRawSamples = 0;
     }
+    // Read the raw signal.
     if (elapsedRaw.count() >= (1000 / targetRawRate) && *connected)
     {
       startRaw = currentTime;
@@ -65,16 +75,17 @@ int EMGFilter::filterDataTask()
 
       if (raw.size() == 4)
       {
+        raws.push_back(raw);
         for (size_t i = 0; i < dataCount; i++)
         {
-
           temp.at(i) += pow(raw.at(i), 2);
+          dataRaw.at(i) = raw.at(i);
         }
         count++;
         currentRawSamples++;
       }
     }
-
+    // Target filter rate after limiting it to the max raw sample rate.
     int tt = targetFilterRate;
 
     if (rawRate > 0 && tt > rawRate)
@@ -82,11 +93,39 @@ int EMGFilter::filterDataTask()
       tt = rawRate;
     }
 
+    if (elapsedWave.count() >= (1e6 / tt))
+    {
+      startWave = currentTime;
+      std::vector<double> waveLength = std::vector<double>(dataCount, 0);
+      for (size_t i = 0; i < raws.size(); i++)
+      {
+        for (size_t j = 0; j < dataCount; j++)
+        {
+          if (i + 1 < raws.size())
+            waveLength.at(j) += abs(raws.at(i + 1).at(j) - raws.at(i).at(j));
+        }
+      }
+      for (size_t i = 0; i < dataCount; i++)
+      {
+        if (raws.size() > 0)
+          waveLength.at(i) = waveLength.at(i) / raws.size();
+      }
+
+      raws.clear();
+
+      filterMutex.lock();
+      dataWL = waveLength;
+      filterMutex.unlock();
+      // printf("A:%f, B:%f, C:%f, D:%f\n", waveLength.at(0), waveLength.at(1), waveLength.at(2), waveLength.at(3));
+    }
+
+    // Apply root mean square.
     if (elapsedFilter.count() >= (1e6 / tt))
     {
       filterMutex.lock();
       currentFilterRate++;
       startFilter = currentTime;
+      // Calculate the base RMS.
       if (!calibrated)
       {
         calibrated = true;
@@ -101,19 +140,23 @@ int EMGFilter::filterDataTask()
       }
       else
       {
-        data.clear();
+        dataRMS.clear();
         for (size_t i = 0; i < dataCount; i++)
         {
           double value = sqrt(temp.at(i) / count) / calibrationData.at(i);
-          data.push_back(value);
+          dataRMS.push_back(value);
           temp.at(i) = 0;
         }
       }
       count = 0;
       if (saveData)
       {
-        savedData.push_back(data);
-        if (savedData.size() >= 500)
+        std::vector<double> combined;
+        combined.reserve( dataRMS.size() + dataWL.size());
+        combined.insert(combined.end(), dataRMS.begin(), dataRMS.end());
+        combined.insert(combined.end(), dataWL.begin(), dataWL.end());
+        savedData.push_back(combined);
+        if (savedData.size() >= saveDataSize)
         {
           saveData = false;
         }

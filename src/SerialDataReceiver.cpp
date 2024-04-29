@@ -71,8 +71,8 @@ int SerialDataReceiver::openPort()
 
 void SerialDataReceiver::closePort()
 {
-  int closed = close(SerialDataReceiver::serial_fd_);
   *status = -1;
+  int closed = close(SerialDataReceiver::serial_fd_);
 }
 
 /// @brief Subroutine task to read the data from the serial port. openPort() should be called before.
