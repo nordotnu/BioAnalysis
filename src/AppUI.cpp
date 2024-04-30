@@ -55,7 +55,7 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD, bool 
   }
 }
 
-AppUI::AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *sdr, EMGFilter *filter, int *status, bool *connected)
+AppUI::AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *sdr, EMGFilter *filter, int *status, bool *connected) : classifier()
 {
   AppUI::sdr = sdr;
   AppUI::filter = filter;
@@ -72,6 +72,8 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *s
   std::thread thr(&EMGFilter::filterDataTask, filter);
   AppUI::thread_filter = &thr;
   AppUI::thread_filter->detach();
+
+  // AppUI::classifier = &Classifier();
 
   AppUI::labels = {"Resting", "Index", "Middle", "Ring", "Pinky"};
 
@@ -108,6 +110,12 @@ void AppUI::recordingElement()
     ImGui::SameLine();
     if (ImGui::Button("Export Recordings"))
       exportRecordings();
+    ImGui::SameLine();
+    if (ImGui::Button("Train"))
+    {
+      classifier.setData(trainingData);
+      classifier.train();
+    }
   }
   else
   {
@@ -139,7 +147,28 @@ void AppUI::recordingElement()
     ImGui::EndTable();
   }
 }
-
+void AppUI::predictCurrent()
+{
+  if (classifier.trained)
+  {
+    ImGui::Text("Accuracy: %.2f ", classifier.accuracy);
+    std::vector<double> current;
+    bool locked = filter->filterMutex.try_lock();
+    if (locked)
+    {
+      current.reserve(filter->dataRMS.size() + filter->dataWL.size());
+      current.insert(current.end(), filter->dataRMS.begin(), filter->dataRMS.end());
+      current.insert(current.end(), filter->dataWL.begin(), filter->dataWL.end());
+      filter->filterMutex.unlock();
+    }
+    int prediction = classifier.predict(current);
+    if (prediction > -1 && prediction < 5)
+    {
+      ImGui::SameLine();
+      ImGui::Text("%s", labels.at(prediction).c_str());
+    }
+  }
+}
 /// @brief Update the contents.
 void AppUI::update()
 {
@@ -228,6 +257,8 @@ void AppUI::update()
     lastSelected = dataType;
 
     recordingElement();
+    predictCurrent();
+
     ImGui::End();
   }
 }
