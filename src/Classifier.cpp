@@ -23,6 +23,7 @@ Classifier::Classifier()
 {
   accuracy = 0;
   trained = false;
+  loadModel();
 }
 
 Classifier::~Classifier()
@@ -86,16 +87,39 @@ void Classifier::train()
   }
   accuracy = (double)correct / (double)y_test.size();
   trained = true;
+  saveModel();
 }
 
 void Classifier::minMaxScale()
 {
 }
 
+bool Classifier::loadModel()
+{
+  svm_model *loadedModel = svm_load_model("model");
+  if (loadedModel)
+  {
+    if (model->nr_class > 0)
+       svm_free_and_destroy_model(&model);
+    model = loadedModel;
+    trained = true;
+  }
+  return trained;
+}
+
+bool Classifier::saveModel()
+{
+  if (!trained)
+    return false;
+  int saved = svm_save_model("model", model);
+  trained = saved == 0;
+  return trained;
+}
+
 int Classifier::predict(std::vector<double> data)
 {
-  if(!trained)
-      return -1;
+  if (!trained)
+    return -1;
   svm_node *data_node = new svm_node[data.size() + 1];
   for (int j = 0; j < data.size(); ++j)
   {

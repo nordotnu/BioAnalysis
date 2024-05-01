@@ -23,6 +23,8 @@ public:
   void setData(std::vector<std::vector<std::vector<double>>> data);
   void train();
   void minMaxScale();
+  bool loadModel();
+  bool saveModel();
   int predict(std::vector<double> data);
   std::tuple<std::vector<std::vector<int>>, std::vector<std::vector<int>>, std::vector<int>, std::vector<int>> split_data(const std::vector<std::vector<int>> &X,
                                                                                                                                      const std::vector<int> &y,

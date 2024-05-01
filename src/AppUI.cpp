@@ -73,8 +73,6 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *s
   AppUI::thread_filter = &thr;
   AppUI::thread_filter->detach();
 
-  // AppUI::classifier = &Classifier();
-
   AppUI::labels = {"Resting", "Index", "Middle", "Ring", "Pinky"};
 
   UserInterface::init(window, glsl_version);
@@ -107,9 +105,6 @@ void AppUI::recordingElement()
     ImGui::SameLine();
     if (ImGui::Button("Record Data") && !filter->saveData)
       filter->saveData = true;
-    ImGui::SameLine();
-    if (ImGui::Button("Export Recordings"))
-      exportRecordings();
     ImGui::SameLine();
     if (ImGui::Button("Train"))
     {
