@@ -19,6 +19,7 @@ private:
   int lastSelected;
   int trainingSamples;
   int currentPort;
+  int votingCount;
   std::vector<std::vector<std::vector<double>>> trainingData;
   std::vector<std::string> labels;
 

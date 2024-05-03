@@ -61,6 +61,7 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), filte
   AppUI::lastSelected = 0;
   AppUI::trainingSamples = 100;
   AppUI::currentPort = 0;
+  AppUI::votingCount = 1;
   std::vector<std::vector<double>> empty;
   AppUI::trainingData = std::vector<std::vector<std::vector<double>>>(5, empty);
 
@@ -153,27 +154,52 @@ void AppUI::predictCurrent()
       ImGui::Text("Accuracy: %.2f ", classifier.accuracy);
       ImGui::SameLine();
     }
-    std::vector<double> current;
-    bool locked = filter.filterMutex.try_lock();
-    if (locked)
+    std::vector<int> predictions;
+    while (predictions.size() < votingCount)
     {
+      std::vector<double> current;
+
+      filter.filterMutex.lock();
+
       current.reserve(filter.dataRMS.size() + filter.dataWL.size());
       current.insert(current.end(), filter.dataRMS.begin(), filter.dataRMS.end());
       current.insert(current.end(), filter.dataWL.begin(), filter.dataWL.end());
       filter.filterMutex.unlock();
+      usleep(2000);
+
+
+      int prediction = classifier.predict(current);
+      if (prediction > -1 && prediction < 5)
+      {
+        predictions.push_back(prediction);
+      }
     }
-    int prediction = classifier.predict(current);
-    if (prediction > -1 && prediction < 5)
+    std::vector<int> occurances = std::vector<int>(5, 0);
+    for (size_t i = 0; i < predictions.size(); i++)
     {
-      ImGui::Text("Prediction: %s", labels.at(prediction).c_str());
+      occurances.at(predictions[i])++;
     }
+    int prediction = 0;
+    for (size_t i = 0; i < occurances.size(); i++)
+    {
+      if (occurances.at(i) > prediction)
+      {
+        prediction = i;
+      }
+    }
+
+    ImGui::Text("Voting Count:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    ImGui::SliderInt("   ", &votingCount, 1, 63);
+    votingCount = votingCount % 3 == 0 ? votingCount++ : votingCount;
+    ImGui::SameLine();
+    ImGui::Text("Prediction: %s", labels.at(prediction).c_str());
   }
 }
 /// @brief Update the contents.
 void AppUI::update()
 {
-
-
 
   if (filter.connectionMutex.try_lock())
   {
@@ -203,8 +229,9 @@ void AppUI::updateSignalPlotTab()
   ImGui::SameLine();
   ImGui::Text("Capturing %d samples per second", filter.rawRate);
 
-  ImGui::Text("Target Filter Rate:");
+  ImGui::Text("Target Extraction Rate:");
   ImGui::SameLine();
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 24);
   ImGui::SliderInt(" ", &filter.targetFilterRate, 5, 500, "%dHz");
   ImGui::SameLine();
   ImGui::Text("Real Rate: %dHz", filter.filterRate);
@@ -269,7 +296,7 @@ void AppUI::updateConnectionTab()
     connect(availablePorts[currentPort]);
     filter.connectionMutex.lock();
   }
-  
+
   ImGui::End();
 }
 AppUI::~AppUI()
