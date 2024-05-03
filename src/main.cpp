@@ -6,7 +6,7 @@ int main()
 {
 
   GLWindow glWindow;
-  if (!glWindow.create(900, 745, "BioAnalysis"))
+  if (!glWindow.create(900, 752, "BioAnalysis"))
     return 1;
   int status = -1;
   bool connected = false;

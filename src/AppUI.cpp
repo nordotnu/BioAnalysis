@@ -146,7 +146,11 @@ void AppUI::predictCurrent()
 {
   if (classifier.trained)
   {
-    ImGui::Text("Accuracy: %.2f ", classifier.accuracy);
+    if (classifier.accuracy > 0)
+    {
+      ImGui::Text("Accuracy: %.2f ", classifier.accuracy);
+      ImGui::SameLine();
+    }
     std::vector<double> current;
     bool locked = filter->filterMutex.try_lock();
     if (locked)
@@ -158,9 +162,8 @@ void AppUI::predictCurrent()
     }
     int prediction = classifier.predict(current);
     if (prediction > -1 && prediction < 5)
-    {
-      ImGui::SameLine();
-      ImGui::Text("%s", labels.at(prediction).c_str());
+    {    
+      ImGui::Text("Prediction: %s", labels.at(prediction).c_str());
     }
   }
 }
