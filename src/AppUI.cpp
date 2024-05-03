@@ -55,23 +55,16 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD, bool 
   }
 }
 
-AppUI::AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *sdr, EMGFilter *filter, int *status, bool *connected) : classifier()
+AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), filter()
 {
-  AppUI::sdr = sdr;
-  AppUI::filter = filter;
-  AppUI::connected = connected;
-  AppUI::status = status;
-
   AppUI::dataType = 0;
   AppUI::lastSelected = 0;
   AppUI::trainingSamples = 100;
+  AppUI::currentPort = 0;
   std::vector<std::vector<double>> empty;
   AppUI::trainingData = std::vector<std::vector<std::vector<double>>>(5, empty);
 
   AppUI::finger = 0;
-  std::thread thr(&EMGFilter::filterDataTask, filter);
-  AppUI::thread_filter = &thr;
-  AppUI::thread_filter->detach();
 
   AppUI::labels = {"Resting", "Index", "Middle", "Ring", "Pinky"};
 
@@ -94,17 +87,17 @@ std::vector<std::string> AppUI::listPorts()
 
 void AppUI::recordingElement()
 {
-  if (!filter->savedData.size())
+  if (!filter.savedData.size())
   {
 
     ImGui::Text("Record");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
     ImGui::InputInt("Sample/s", &trainingSamples, 10, 1000);
-    filter->saveDataSize = trainingSamples;
+    filter.saveDataSize = trainingSamples;
     ImGui::SameLine();
-    if (ImGui::Button("Record Data") && !filter->saveData)
-      filter->saveData = true;
+    if (ImGui::Button("Record Data") && !filter.saveData)
+      filter.saveData = true;
     ImGui::SameLine();
     if (ImGui::Button("Train"))
     {
@@ -114,14 +107,14 @@ void AppUI::recordingElement()
   }
   else
   {
-    ImGui::ProgressBar(float(filter->savedData.size()) / trainingSamples);
+    ImGui::ProgressBar(float(filter.savedData.size()) / trainingSamples);
   }
 
-  if (!filter->saveData && filter->savedData.size() == trainingSamples)
+  if (!filter.saveData && filter.savedData.size() == trainingSamples)
   {
     trainingData.at(finger).clear();
-    trainingData.at(finger) = filter->savedData;
-    filter->savedData.clear();
+    trainingData.at(finger) = filter.savedData;
+    filter.savedData.clear();
     finger = finger < 4 ? finger + 1 : 0;
   }
 
@@ -142,6 +135,15 @@ void AppUI::recordingElement()
     ImGui::EndTable();
   }
 }
+void AppUI::connect(const char *port)
+{
+  if (filter.start(port))
+  {
+    std::thread thr(&EMGFilter::filterDataTask, &filter);
+    AppUI::thread_filter = &thr;
+    thr.detach();
+  }
+}
 void AppUI::predictCurrent()
 {
   if (classifier.trained)
@@ -152,17 +154,17 @@ void AppUI::predictCurrent()
       ImGui::SameLine();
     }
     std::vector<double> current;
-    bool locked = filter->filterMutex.try_lock();
+    bool locked = filter.filterMutex.try_lock();
     if (locked)
     {
-      current.reserve(filter->dataRMS.size() + filter->dataWL.size());
-      current.insert(current.end(), filter->dataRMS.begin(), filter->dataRMS.end());
-      current.insert(current.end(), filter->dataWL.begin(), filter->dataWL.end());
-      filter->filterMutex.unlock();
+      current.reserve(filter.dataRMS.size() + filter.dataWL.size());
+      current.insert(current.end(), filter.dataRMS.begin(), filter.dataRMS.end());
+      current.insert(current.end(), filter.dataWL.begin(), filter.dataWL.end());
+      filter.filterMutex.unlock();
     }
     int prediction = classifier.predict(current);
     if (prediction > -1 && prediction < 5)
-    {    
+    {
       ImGui::Text("Prediction: %s", labels.at(prediction).c_str());
     }
   }
@@ -171,96 +173,105 @@ void AppUI::predictCurrent()
 void AppUI::update()
 {
 
+
+
+  if (filter.connectionMutex.try_lock())
+  {
+    if (!filter.connected)
+    {
+      updateConnectionTab();
+    }
+    else
+    {
+      updateSignalPlotTab();
+    }
+    filter.connectionMutex.unlock();
+  }
+}
+void AppUI::updateSignalPlotTab()
+{
   float vva = 0.0f;
   float vvb = 0.0f;
   float vvc = 0.0f;
   float vvd = 0.0f;
 
-  ImGui::Begin("Connection", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
-  if (!*connected && *status != 0)
+  ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+  if (ImGui::Button("Close Port"))
   {
-    availablePorts.clear();
-    std::vector<std::string> portList = listPorts();
-    for (int i = 0; i < portList.size(); ++i)
-      availablePorts.push_back(portList[i].c_str());
-    int currentPort = 0;
-    ImGui::Text("Serial Ports");
-    ImGui::SameLine();
-    ImGui::Combo(" ", &currentPort, availablePorts.data(), availablePorts.size());
-    ImGui::SameLine();
-    if (ImGui::Button("Open Port") && availablePorts.size())
+    filter.terminate();
+  }
+  ImGui::SameLine();
+  ImGui::Text("Capturing %d samples per second", filter.rawRate);
+
+  ImGui::Text("Target Filter Rate:");
+  ImGui::SameLine();
+  ImGui::SliderInt(" ", &filter.targetFilterRate, 5, 500, "%dHz");
+  ImGui::SameLine();
+  ImGui::Text("Real Rate: %dHz", filter.filterRate);
+  ImGui::Text("Data Type: ");
+  ImGui::SameLine();
+  ImGui::RadioButton("Raw", &dataType, 0);
+  ImGui::SameLine();
+  ImGui::RadioButton("RMS", &dataType, 1);
+  ImGui::SameLine();
+  if (ImGui::Button("Calibrate") && filter.calibrated)
+    filter.calibrated = false;
+  ImGui::SameLine();
+  ImGui::RadioButton("WL", &dataType, 2);
+
+  std::vector<double> data;
+  bool locked = filter.filterMutex.try_lock();
+  if (locked)
+  {
+    switch (dataType)
     {
-      sdr->setPort(availablePorts[currentPort]);
-      if (sdr->openPort() == 0)
-      {
-        *connected = true;
-      }
+    case 0:
+      data = filter.dataRaw;
+      break;
+    case 1:
+      data = filter.dataRMS;
+      break;
+    case 2:
+      data = filter.dataWL;
+      break;
+    default:
+      break;
     }
+    vva = (float)data.at(0);
+    vvb = (float)data.at(1);
+    vvc = (float)data.at(2);
+    vvd = (float)data.at(3);
+    filter.filterMutex.unlock();
   }
-  else if (ImGui::Button("Close Port") && *status == 0)
-  {
-    *connected = false;
-    sdr->closePort();
-  }
+
+  RealtimePlots(vva, vvb, vvc, vvd, lastSelected != dataType);
+  lastSelected = dataType;
+
+  recordingElement();
+  predictCurrent();
 
   ImGui::End();
-
-  if (*connected)
-  {
-
-    ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
-
-    ImGui::Text("Target Filter Rate:");
-    ImGui::SameLine();
-    ImGui::SliderInt(" ", &filter->targetFilterRate, 5, 500, "%dHz");
-    ImGui::SameLine();
-    ImGui::Text("Real Rate: %dHz", filter->filterRate);
-    ImGui::Text("Data Type: ");
-    ImGui::SameLine();
-    ImGui::RadioButton("Raw", &dataType, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("RMS", &dataType, 1);
-    ImGui::SameLine();
-    if (ImGui::Button("Calibrate") && filter->calibrated)
-      filter->calibrated = false;
-    ImGui::SameLine();
-    ImGui::RadioButton("WL", &dataType, 2);
-
-    std::vector<double> data;
-    bool locked = filter->filterMutex.try_lock();
-    if (locked)
-    {
-      switch (dataType)
-      {
-      case 0:
-        data = filter->dataRaw;
-        break;
-      case 1:
-        data = filter->dataRMS;
-        break;
-      case 2:
-        data = filter->dataWL;
-        break;
-      default:
-        break;
-      }
-      vva = (float)data.at(0);
-      vvb = (float)data.at(1);
-      vvc = (float)data.at(2);
-      vvd = (float)data.at(3);
-      filter->filterMutex.unlock();
-    }
-
-    RealtimePlots(vva, vvb, vvc, vvd, lastSelected != dataType);
-    lastSelected = dataType;
-
-    recordingElement();
-    predictCurrent();
-
-    ImGui::End();
-  }
 }
-
+void AppUI::updateConnectionTab()
+{
+  ImGui::Begin("Connection", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+  availablePorts.clear();
+  std::vector<std::string> portList = listPorts();
+  for (int i = 0; i < portList.size(); ++i)
+    availablePorts.push_back(portList[i].c_str());
+  ImGui::Text("Serial Ports");
+  ImGui::SameLine();
+  ImGui::Combo(" ", &currentPort, availablePorts.data(), availablePorts.size());
+  ImGui::SameLine();
+  if (ImGui::Button("Open Port") && availablePorts.size())
+  {
+    filter.connectionMutex.unlock();
+    connect(availablePorts[currentPort]);
+    filter.connectionMutex.lock();
+  }
+  
+  ImGui::End();
+}
 AppUI::~AppUI()
 {
 }
@@ -268,10 +279,7 @@ AppUI::~AppUI()
 // Closes the thread and calls the UserInterface::shutdown().
 void AppUI::shutdown()
 {
-  sdr->closePort();
-  *connected = false;
-  *status = -1;
-  filter->terminate();
+  // filter.terminate();
 
   UserInterface::shutdown();
 }

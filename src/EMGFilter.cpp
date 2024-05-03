@@ -1,15 +1,18 @@
 #include "EMGFilter.h"
 
-EMGFilter::EMGFilter(SerialDataReceiver *sdr, bool *connected, int dataCount, int targetFilterRate, int targetRawRate)
+EMGFilter::EMGFilter(int dataCount, int targetFilterRate, int targetRawRate) : sdr(B921600)
 {
-  EMGFilter::sdr = sdr;
-  EMGFilter::connected = connected;
   EMGFilter::dataCount = dataCount;
   EMGFilter::targetFilterRate = targetFilterRate;
   EMGFilter::targetRawRate = targetRawRate;
-  EMGFilter::terminated = false;
+  EMGFilter::terminated = true;
   EMGFilter::calibrated = false;
   EMGFilter::saveData = false;
+  EMGFilter::connected = false;
+
+  dataRMS = std::vector<double>(dataCount, 0);
+  dataRaw = std::vector<double>(dataCount, 0);
+  dataWL = std::vector<double>(dataCount, 0);
 }
 
 EMGFilter::~EMGFilter()
@@ -22,14 +25,24 @@ void EMGFilter::terminate()
   EMGFilter::terminated = true;
 }
 
+bool EMGFilter::start(const char *port)
+{
+  const std::lock_guard<std::mutex> lock(connectionMutex);
+  sdr.setPort(port);
+  if(sdr.openPort()) {
+    connected = true;
+    terminated = false;
+  }
+  return connected;
+}
+
 /// @brief Subroutine to fetch the data from the serialDataReceiver and filter the data.
 /// @return 0 if interupted or finished.
 int EMGFilter::filterDataTask()
 {
+
   std::vector<double> temp = std::vector<double>(dataCount, 0);
-  dataRMS = std::vector<double>(dataCount,0);
-  dataRaw = std::vector<double>(dataCount,0);
-  dataWL = std::vector<double>(dataCount,0);
+
   std::vector<std::vector<uint16_t>> raws;
   for (size_t i = 0; i < dataCount; i++)
   {
@@ -46,12 +59,6 @@ int EMGFilter::filterDataTask()
   auto startRate = std::chrono::high_resolution_clock::now();
   while (!terminated)
   {
-    if (!*connected)
-    {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-      continue;
-    }
-
     auto currentTime = std::chrono::high_resolution_clock::now();
     auto elapsedFilter = std::chrono::duration_cast<std::chrono::microseconds>(currentTime - startFilter);
     auto elapsedWave = std::chrono::duration_cast<std::chrono::microseconds>(currentTime - startWave);
@@ -68,10 +75,10 @@ int EMGFilter::filterDataTask()
       currentRawSamples = 0;
     }
     // Read the raw signal.
-    if (elapsedRaw.count() >= (1000 / targetRawRate) && *connected)
+    if (elapsedRaw.count() >= (1000 / targetRawRate))
     {
       startRaw = currentTime;
-      std::vector<uint16_t> raw = sdr->receiveData();
+      std::vector<uint16_t> raw = sdr.receiveData();
 
       if (raw.size() == 4)
       {
@@ -152,7 +159,7 @@ int EMGFilter::filterDataTask()
       if (saveData)
       {
         std::vector<double> combined;
-        combined.reserve( dataRMS.size() + dataWL.size());
+        combined.reserve(dataRMS.size() + dataWL.size());
         combined.insert(combined.end(), dataRMS.begin(), dataRMS.end());
         combined.insert(combined.end(), dataWL.begin(), dataWL.end());
         savedData.push_back(combined);
@@ -163,6 +170,13 @@ int EMGFilter::filterDataTask()
       }
       filterMutex.unlock();
     }
+  }
+  if (sdr.closePort())
+  {
+    const std::lock_guard<std::mutex> lock(connectionMutex);
+    connected = false;
+  } else {
+    printf("Failed to close the port!\n");
   }
   return 0;
 }

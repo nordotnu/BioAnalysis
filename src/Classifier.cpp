@@ -28,7 +28,7 @@ Classifier::Classifier()
 
 Classifier::~Classifier()
 {
-  svm_free_and_destroy_model(&model);
+  //svm_free_and_destroy_model(&model);
 }
 
 void Classifier::train()
@@ -99,8 +99,6 @@ bool Classifier::loadModel()
   svm_model *loadedModel = svm_load_model("model");
   if (loadedModel)
   {
-    if (model->nr_class > 0)
-       svm_free_and_destroy_model(&model);
     model = loadedModel;
     trained = true;
   }

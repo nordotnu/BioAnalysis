@@ -14,27 +14,28 @@
 class AppUI : public UserInterface
 {
 private:
-  bool *connected;
-  int *status;
   int finger;
   int dataType;
   int lastSelected;
   int trainingSamples;
+  int currentPort;
   std::vector<std::vector<std::vector<double>>> trainingData;
   std::vector<std::string> labels;
 
-  SerialDataReceiver *sdr;
-  EMGFilter *filter;
+  EMGFilter filter;
   std::thread *thread_filter;
   std::vector<const char *> availablePorts;
   std::vector<std::string> listPorts();
   Classifier classifier;
   void recordingElement();
   void predictCurrent();
+  void updateConnectionTab();
+  void updateSignalPlotTab();
   void exportRecordings();
+  void connect(const char *port);
 
 public:
-  AppUI(GLFWwindow *window, const char *glsl_version, SerialDataReceiver *sdr, EMGFilter *filter, int *status, bool *connected);
+  AppUI(GLFWwindow *window, const char *glsl_version);
   ~AppUI();
   virtual void update() override;
   virtual void shutdown() override;

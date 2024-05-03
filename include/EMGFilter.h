@@ -14,6 +14,7 @@ class EMGFilter
 {
 public:
   std::mutex filterMutex;
+  std::mutex connectionMutex;
   std::vector<double> dataRaw;
   std::vector<double> dataRMS;
   std::vector<double> dataWL;
@@ -25,16 +26,18 @@ public:
   int filterRate;
   int rawRate;
   int saveDataSize;
-  EMGFilter(SerialDataReceiver *sdr, bool *connected, int dataCount = 4, int targetFilterRate = 100, int targetRawRate = 500);
+  bool connected;
+
+  EMGFilter(int dataCount = 4, int targetFilterRate = 100, int targetRawRate = 500);
   ~EMGFilter();
 
+  bool start(const char *port);
   int filterDataTask();
   void terminate();
 
 private:
-  SerialDataReceiver *sdr;
   bool terminated;
-  bool *connected;
+  SerialDataReceiver sdr;
   int dataCount;
   int targetRawRate;
 };

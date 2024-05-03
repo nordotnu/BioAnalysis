@@ -6,13 +6,9 @@ int main()
 {
 
   GLWindow glWindow;
-  if (!glWindow.create(900, 752, "BioAnalysis"))
+  if (!glWindow.create(900, 750, "BioAnalysis"))
     return 1;
-  int status = -1;
-  bool connected = false;
-  SerialDataReceiver sdr(B921600, &status);
-  EMGFilter filter(&sdr, &connected);
-  AppUI ui(glWindow.window, glWindow.glsl_version, &sdr, &filter, &status, &connected);
+  AppUI ui(glWindow.window, glWindow.glsl_version);
 
 
   while (!glWindow.closed())
