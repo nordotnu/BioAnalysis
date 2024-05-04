@@ -62,8 +62,12 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), filte
   AppUI::trainingSamples = 100;
   AppUI::currentPort = 0;
   AppUI::votingCount = 1;
+  AppUI::triggerCount = 1;
+  AppUI::lastPrediction = -1;
+  AppUI::act = 0;
   std::vector<std::vector<double>> empty;
   AppUI::trainingData = std::vector<std::vector<std::vector<double>>>(5, empty);
+  AppUI::triggers = std::vector<int>(5, 0);
 
   AppUI::finger = 0;
 
@@ -119,12 +123,14 @@ void AppUI::recordingElement()
     finger = finger < 4 ? finger + 1 : 0;
   }
 
-  if (ImGui::BeginTable("table", 2, ImGuiTableFlags_Borders))
+  if (ImGui::BeginTable("table", 3, ImGuiTableFlags_Borders))
   {
     ImGui::TableNextColumn();
     ImGui::Text("Finger");
     ImGui::TableNextColumn();
     ImGui::Text("Recorder Samples", ImGui::GetContentRegionAvail().x);
+    ImGui::TableNextColumn();
+    ImGui::Text("Trigger", ImGui::GetContentRegionAvail().x);
     for (int n = 0; n < 5; n++)
     {
       ImGui::TableNextRow();
@@ -132,6 +138,9 @@ void AppUI::recordingElement()
       ImGui::RadioButton(labels.at(n).c_str(), &finger, n);
       ImGui::TableNextColumn();
       ImGui::Text("%d", trainingData.at(n).size());
+      ImGui::TableNextColumn();
+      ImGui::ProgressBar((float)triggers.at(n)/(float)triggerCount);
+      //ImGui::Text("%d/%d", triggers.at(n), triggerCount);
     }
     ImGui::EndTable();
   }
@@ -165,8 +174,7 @@ void AppUI::predictCurrent()
       current.insert(current.end(), filter.dataRMS.begin(), filter.dataRMS.end());
       current.insert(current.end(), filter.dataWL.begin(), filter.dataWL.end());
       filter.filterMutex.unlock();
-      usleep(2000);
-
+      //usleep((1 / (double)filter.targetFilterRate) * 1e6);
 
       int prediction = classifier.predict(current);
       if (prediction > -1 && prediction < 5)
@@ -187,6 +195,25 @@ void AppUI::predictCurrent()
         prediction = i;
       }
     }
+    // act = 0;
+    if (lastPrediction != prediction)
+    {
+      lastPrediction = prediction;
+      triggers = std::vector<int>(5, 0);
+    }
+    else
+    {
+      triggers.at(prediction)++;
+      for (size_t i = 0; i < 5; i++)
+      {
+        if (triggers.at(i) >= triggerCount)
+        {
+          act = i;
+          triggers = std::vector<int>(5, 0);
+          break;
+        }
+      }
+    }
 
     ImGui::Text("Voting Count:");
     ImGui::SameLine();
@@ -195,6 +222,13 @@ void AppUI::predictCurrent()
     votingCount = votingCount % 3 == 0 ? votingCount++ : votingCount;
     ImGui::SameLine();
     ImGui::Text("Prediction: %s", labels.at(prediction).c_str());
+    ImGui::Text("P Trigger: %s", labels.at(act).c_str());
+
+    ImGui::SameLine();
+    ImGui::Text("Trigger Count:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    ImGui::SliderInt("     ", &triggerCount, 1, 100);
   }
 }
 /// @brief Update the contents.
@@ -232,7 +266,7 @@ void AppUI::updateSignalPlotTab()
   ImGui::Text("Target Extraction Rate:");
   ImGui::SameLine();
   ImGui::SetNextItemWidth(ImGui::GetFontSize() * 24);
-  ImGui::SliderInt(" ", &filter.targetFilterRate, 5, 500, "%dHz");
+  ImGui::SliderInt(" ", &filter.targetFilterRate, 1, 500, "%dHz");
   ImGui::SameLine();
   ImGui::Text("Real Rate: %dHz", filter.filterRate);
   ImGui::Text("Data Type: ");

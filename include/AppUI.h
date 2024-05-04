@@ -20,8 +20,15 @@ private:
   int trainingSamples;
   int currentPort;
   int votingCount;
+  int triggerCount;
+  int lastPrediction;
+  int act;
+
+
+  std::vector<int> triggers;
   std::vector<std::vector<std::vector<double>>> trainingData;
   std::vector<std::string> labels;
+
 
   EMGFilter filter;
   std::thread *thread_filter;

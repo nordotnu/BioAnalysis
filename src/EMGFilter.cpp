@@ -10,6 +10,10 @@ EMGFilter::EMGFilter(int dataCount, int targetFilterRate, int targetRawRate) : s
   EMGFilter::saveData = false;
   EMGFilter::connected = false;
 
+  filterRate = 0;
+  rawRate = 0;
+  
+
   dataRMS = std::vector<double>(dataCount, 0);
   dataRaw = std::vector<double>(dataCount, 0);
   dataWL = std::vector<double>(dataCount, 0);
@@ -151,7 +155,7 @@ int EMGFilter::filterDataTask()
         for (size_t i = 0; i < dataCount; i++)
         {
           double value = sqrt(temp.at(i) / count) / calibrationData.at(i);
-          dataRMS.push_back(value);
+          dataRMS.push_back(value * 100);
           temp.at(i) = 0;
         }
       }
