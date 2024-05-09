@@ -1,6 +1,6 @@
 #include "Extractor.h"
 
-Extractor::Extractor(int dataCount, int targetExtractRate, int targetRawRate) : sdr(B921600)
+Extractor::Extractor(int dataCount, int targetExtractRate, int targetRawRate, int bufferSize) : sdr(B921600)
 {
   Extractor::dataCount = dataCount;
   Extractor::targetExtractRate = targetExtractRate;
@@ -9,10 +9,14 @@ Extractor::Extractor(int dataCount, int targetExtractRate, int targetRawRate) : 
   Extractor::calibrated = false;
   Extractor::saveData = false;
   Extractor::connected = false;
+  Extractor::bufferSize = bufferSize;
 
   extractRate = 0;
   rawRate = 0;
   
+  
+
+
 
   dataRMS = std::vector<double>(dataCount, 0);
   dataRaw = std::vector<double>(dataCount, 0);
@@ -33,7 +37,8 @@ bool Extractor::start(const char *port)
 {
   const std::lock_guard<std::mutex> lock(connectionMutex);
   sdr.setPort(port);
-  if(sdr.openPort()) {
+  if (sdr.openPort())
+  {
     connected = true;
     terminated = false;
   }
@@ -155,23 +160,27 @@ int Extractor::filterDataTask()
         for (size_t i = 0; i < dataCount; i++)
         {
           double value = sqrt(temp.at(i) / count) / calibrationData.at(i);
-          dataRMS.push_back(value * 100);
+          dataRMS.push_back(value);
           temp.at(i) = 0;
         }
       }
       count = 0;
-      if (saveData)
-      {
+
         std::vector<double> combined;
         combined.reserve(dataRMS.size() + dataWL.size());
         combined.insert(combined.end(), dataRMS.begin(), dataRMS.end());
         combined.insert(combined.end(), dataWL.begin(), dataWL.end());
-        savedData.push_back(combined);
-        if (savedData.size() >= saveDataSize)
-        {
-          saveData = false;
+        if (buffer.size() < bufferSize){
+          buffer.push_back(combined);
         }
-      }
+        if (saveData)
+        {
+          savedData.push_back(combined);
+          if (savedData.size() >= saveDataSize)
+          {
+            saveData = false;
+          }
+        }
       extractMutex.unlock();
     }
   }
@@ -179,7 +188,9 @@ int Extractor::filterDataTask()
   {
     const std::lock_guard<std::mutex> lock(connectionMutex);
     connected = false;
-  } else {
+  }
+  else
+  {
     printf("Failed to close the port!\n");
   }
   return 0;

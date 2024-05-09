@@ -22,6 +22,7 @@ private:
   int votingCount;
   int triggerCount;
   int lastPrediction;
+  int prediction;
   int act;
 
 

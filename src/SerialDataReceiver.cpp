@@ -92,11 +92,13 @@ std::vector<uint16_t> SerialDataReceiver::receiveData()
     numbers = extractData(buffer);
     if (numbers.size() == 4)
     {
-      numbers[0] = sqrt(filterA.update(numbers[0]));
-      numbers[1] = sqrt(filterB.update(numbers[1]));
-      numbers[2] = sqrt(filterC.update(numbers[2]));
-      numbers[3] = sqrt(filterD.update(numbers[3]));
+      /*
+      numbers[0] = sqrt(filterA.update(numbers[0])) * 1000;
+      numbers[1] = sqrt(filterB.update(numbers[1])) * 1000;
+      numbers[2] = sqrt(filterC.update(numbers[2])) * 1000;
+      numbers[3] = sqrt(filterD.update(numbers[3])) * 1000;
 
+      */
       return numbers;
     }
   }

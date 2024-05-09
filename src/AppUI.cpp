@@ -64,6 +64,7 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), extra
   AppUI::votingCount = 1;
   AppUI::triggerCount = 1;
   AppUI::lastPrediction = -1;
+  AppUI::prediction = 0;
   AppUI::act = 0;
   std::vector<std::vector<double>> empty;
   AppUI::trainingData = std::vector<std::vector<std::vector<double>>>(5, empty);
@@ -139,8 +140,8 @@ void AppUI::recordingElement()
       ImGui::TableNextColumn();
       ImGui::Text("%d", trainingData.at(n).size());
       ImGui::TableNextColumn();
-      ImGui::ProgressBar((float)triggers.at(n)/(float)triggerCount);
-      //ImGui::Text("%d/%d", triggers.at(n), triggerCount);
+      ImGui::ProgressBar((float)triggers.at(n) / (float)triggerCount);
+      // ImGui::Text("%d/%d", triggers.at(n), triggerCount);
     }
     ImGui::EndTable();
   }
@@ -163,39 +164,20 @@ void AppUI::predictCurrent()
       ImGui::Text("Accuracy: %.2f ", classifier.accuracy);
       ImGui::SameLine();
     }
-    std::vector<int> predictions;
-    while (predictions.size() < votingCount)
-    {
-      std::vector<double> current;
 
-      extractor.extractMutex.lock();
 
-      current.reserve(extractor.dataRMS.size() + extractor.dataWL.size());
-      current.insert(current.end(), extractor.dataRMS.begin(), extractor.dataRMS.end());
-      current.insert(current.end(), extractor.dataWL.begin(), extractor.dataWL.end());
-      extractor.extractMutex.unlock();
-      //usleep((1 / (double)filter.targetExtractRate) * 1e6);
+    extractor.extractMutex.lock();
+    std::vector<double> combined;
+    combined.reserve(extractor.dataRMS.size() + extractor.dataWL.size());
+    combined.insert(combined.end(), extractor.dataRMS.begin(), extractor.dataRMS.end());
+    combined.insert(combined.end(), extractor.dataWL.begin(), extractor.dataWL.end());
 
-      int prediction = classifier.predict(current);
-      if (prediction > -1 && prediction < 5)
-      {
-        predictions.push_back(prediction);
-      }
-    }
-    std::vector<int> occurances = std::vector<int>(5, 0);
-    for (size_t i = 0; i < predictions.size(); i++)
+    extractor.extractMutex.unlock();
+    int pred = classifier.predict(combined);
+    if (pred >= 0 && pred < 5)
     {
-      occurances.at(predictions[i])++;
+      prediction = pred;
     }
-    int prediction = 0;
-    for (size_t i = 0; i < occurances.size(); i++)
-    {
-      if (occurances.at(i) > prediction)
-      {
-        prediction = i;
-      }
-    }
-    // act = 0;
     if (lastPrediction != prediction)
     {
       lastPrediction = prediction;
@@ -215,15 +197,11 @@ void AppUI::predictCurrent()
       }
     }
 
+
     ImGui::Text("Voting Count:");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
-    ImGui::SliderInt("   ", &votingCount, 1, 63);
-    votingCount = votingCount % 3 == 0 ? votingCount++ : votingCount;
     ImGui::SameLine();
     ImGui::Text("Prediction: %s", labels.at(prediction).c_str());
     ImGui::Text("P Trigger: %s", labels.at(act).c_str());
-
     ImGui::SameLine();
     ImGui::Text("Trigger Count:");
     ImGui::SameLine();
