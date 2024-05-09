@@ -1,5 +1,6 @@
 
 #include "SerialDataReceiver.h"
+#include <cmath>
 
 /// @brief Constructor
 /// @param port Path to the serial port (e.g. "/dev/ttyUSB0").
@@ -8,6 +9,10 @@
 SerialDataReceiver::SerialDataReceiver(speed_t baudRate)
 {
   SerialDataReceiver::baudRate = baudRate;
+  filterA.init(SAMPLE_FREQ_500HZ, NOTCH_FREQ_50HZ, true, true, true);
+  filterB.init(SAMPLE_FREQ_500HZ, NOTCH_FREQ_50HZ, true, true, true);
+  filterC.init(SAMPLE_FREQ_500HZ, NOTCH_FREQ_50HZ, true, true, true);
+  filterD.init(SAMPLE_FREQ_500HZ, NOTCH_FREQ_50HZ, true, true, true);
 }
 
 SerialDataReceiver::~SerialDataReceiver()
@@ -87,6 +92,11 @@ std::vector<uint16_t> SerialDataReceiver::receiveData()
     numbers = extractData(buffer);
     if (numbers.size() == 4)
     {
+      numbers[0] = sqrt(filterA.update(numbers[0]));
+      numbers[1] = sqrt(filterB.update(numbers[1]));
+      numbers[2] = sqrt(filterC.update(numbers[2]));
+      numbers[3] = sqrt(filterD.update(numbers[3]));
+
       return numbers;
     }
   }

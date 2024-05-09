@@ -13,6 +13,7 @@
 #include <thread>
 #include <unistd.h> // UNIX standard function definitions
 #include <vector>
+#include "EMGFilters.h"
 
 class SerialDataReceiver
 {
@@ -31,6 +32,10 @@ public:
 
 private:
   speed_t baudRate;
+  EMGFilters filterA;
+  EMGFilters filterB;
+  EMGFilters filterC;
+  EMGFilters filterD;
   int serial_fd_;
   int sampleRate = 0;
   int errorCount = 0;

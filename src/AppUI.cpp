@@ -55,7 +55,7 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD, bool 
   }
 }
 
-AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), filter()
+AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), extractor()
 {
   AppUI::dataType = 0;
   AppUI::lastSelected = 0;
@@ -92,17 +92,17 @@ std::vector<std::string> AppUI::listPorts()
 
 void AppUI::recordingElement()
 {
-  if (!filter.savedData.size())
+  if (!extractor.savedData.size())
   {
 
     ImGui::Text("Record");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
     ImGui::InputInt("Sample/s", &trainingSamples, 10, 1000);
-    filter.saveDataSize = trainingSamples;
+    extractor.saveDataSize = trainingSamples;
     ImGui::SameLine();
-    if (ImGui::Button("Record Data") && !filter.saveData)
-      filter.saveData = true;
+    if (ImGui::Button("Record Data") && !extractor.saveData)
+      extractor.saveData = true;
     ImGui::SameLine();
     if (ImGui::Button("Train"))
     {
@@ -112,14 +112,14 @@ void AppUI::recordingElement()
   }
   else
   {
-    ImGui::ProgressBar(float(filter.savedData.size()) / trainingSamples);
+    ImGui::ProgressBar(float(extractor.savedData.size()) / trainingSamples);
   }
 
-  if (!filter.saveData && filter.savedData.size() == trainingSamples)
+  if (!extractor.saveData && extractor.savedData.size() == trainingSamples)
   {
     trainingData.at(finger).clear();
-    trainingData.at(finger) = filter.savedData;
-    filter.savedData.clear();
+    trainingData.at(finger) = extractor.savedData;
+    extractor.savedData.clear();
     finger = finger < 4 ? finger + 1 : 0;
   }
 
@@ -147,9 +147,9 @@ void AppUI::recordingElement()
 }
 void AppUI::connect(const char *port)
 {
-  if (filter.start(port))
+  if (extractor.start(port))
   {
-    std::thread thr(&EMGFilter::filterDataTask, &filter);
+    std::thread thr(&Extractor::filterDataTask, &extractor);
     AppUI::thread_filter = &thr;
     thr.detach();
   }
@@ -168,13 +168,13 @@ void AppUI::predictCurrent()
     {
       std::vector<double> current;
 
-      filter.filterMutex.lock();
+      extractor.extractMutex.lock();
 
-      current.reserve(filter.dataRMS.size() + filter.dataWL.size());
-      current.insert(current.end(), filter.dataRMS.begin(), filter.dataRMS.end());
-      current.insert(current.end(), filter.dataWL.begin(), filter.dataWL.end());
-      filter.filterMutex.unlock();
-      //usleep((1 / (double)filter.targetFilterRate) * 1e6);
+      current.reserve(extractor.dataRMS.size() + extractor.dataWL.size());
+      current.insert(current.end(), extractor.dataRMS.begin(), extractor.dataRMS.end());
+      current.insert(current.end(), extractor.dataWL.begin(), extractor.dataWL.end());
+      extractor.extractMutex.unlock();
+      //usleep((1 / (double)filter.targetExtractRate) * 1e6);
 
       int prediction = classifier.predict(current);
       if (prediction > -1 && prediction < 5)
@@ -235,9 +235,9 @@ void AppUI::predictCurrent()
 void AppUI::update()
 {
 
-  if (filter.connectionMutex.try_lock())
+  if (extractor.connectionMutex.try_lock())
   {
-    if (!filter.connected)
+    if (!extractor.connected)
     {
       updateConnectionTab();
     }
@@ -245,7 +245,7 @@ void AppUI::update()
     {
       updateSignalPlotTab();
     }
-    filter.connectionMutex.unlock();
+    extractor.connectionMutex.unlock();
   }
 }
 void AppUI::updateSignalPlotTab()
@@ -258,42 +258,42 @@ void AppUI::updateSignalPlotTab()
   ImGui::Begin("Signal Plot", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
   if (ImGui::Button("Close Port"))
   {
-    filter.terminate();
+    extractor.terminate();
   }
   ImGui::SameLine();
-  ImGui::Text("Capturing %d samples per second", filter.rawRate);
+  ImGui::Text("Capturing %d samples per second", extractor.rawRate);
 
   ImGui::Text("Target Extraction Rate:");
   ImGui::SameLine();
   ImGui::SetNextItemWidth(ImGui::GetFontSize() * 24);
-  ImGui::SliderInt(" ", &filter.targetFilterRate, 1, 500, "%dHz");
+  ImGui::SliderInt(" ", &extractor.targetExtractRate, 1, 500, "%dHz");
   ImGui::SameLine();
-  ImGui::Text("Real Rate: %dHz", filter.filterRate);
+  ImGui::Text("Real Rate: %dHz", extractor.extractRate);
   ImGui::Text("Data Type: ");
   ImGui::SameLine();
   ImGui::RadioButton("Raw", &dataType, 0);
   ImGui::SameLine();
   ImGui::RadioButton("RMS", &dataType, 1);
   ImGui::SameLine();
-  if (ImGui::Button("Calibrate") && filter.calibrated)
-    filter.calibrated = false;
+  if (ImGui::Button("Calibrate") && extractor.calibrated)
+    extractor.calibrated = false;
   ImGui::SameLine();
   ImGui::RadioButton("WL", &dataType, 2);
 
   std::vector<double> data;
-  bool locked = filter.filterMutex.try_lock();
+  bool locked = extractor.extractMutex.try_lock();
   if (locked)
   {
     switch (dataType)
     {
     case 0:
-      data = filter.dataRaw;
+      data = extractor.dataRaw;
       break;
     case 1:
-      data = filter.dataRMS;
+      data = extractor.dataRMS;
       break;
     case 2:
-      data = filter.dataWL;
+      data = extractor.dataWL;
       break;
     default:
       break;
@@ -302,7 +302,7 @@ void AppUI::updateSignalPlotTab()
     vvb = (float)data.at(1);
     vvc = (float)data.at(2);
     vvd = (float)data.at(3);
-    filter.filterMutex.unlock();
+    extractor.extractMutex.unlock();
   }
 
   RealtimePlots(vva, vvb, vvc, vvd, lastSelected != dataType);
@@ -326,9 +326,9 @@ void AppUI::updateConnectionTab()
   ImGui::SameLine();
   if (ImGui::Button("Open Port") && availablePorts.size())
   {
-    filter.connectionMutex.unlock();
+    extractor.connectionMutex.unlock();
     connect(availablePorts[currentPort]);
-    filter.connectionMutex.lock();
+    extractor.connectionMutex.lock();
   }
 
   ImGui::End();

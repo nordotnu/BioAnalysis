@@ -1,16 +1,16 @@
-#include "EMGFilter.h"
+#include "Extractor.h"
 
-EMGFilter::EMGFilter(int dataCount, int targetFilterRate, int targetRawRate) : sdr(B921600)
+Extractor::Extractor(int dataCount, int targetExtractRate, int targetRawRate) : sdr(B921600)
 {
-  EMGFilter::dataCount = dataCount;
-  EMGFilter::targetFilterRate = targetFilterRate;
-  EMGFilter::targetRawRate = targetRawRate;
-  EMGFilter::terminated = true;
-  EMGFilter::calibrated = false;
-  EMGFilter::saveData = false;
-  EMGFilter::connected = false;
+  Extractor::dataCount = dataCount;
+  Extractor::targetExtractRate = targetExtractRate;
+  Extractor::targetRawRate = targetRawRate;
+  Extractor::terminated = true;
+  Extractor::calibrated = false;
+  Extractor::saveData = false;
+  Extractor::connected = false;
 
-  filterRate = 0;
+  extractRate = 0;
   rawRate = 0;
   
 
@@ -19,17 +19,17 @@ EMGFilter::EMGFilter(int dataCount, int targetFilterRate, int targetRawRate) : s
   dataWL = std::vector<double>(dataCount, 0);
 }
 
-EMGFilter::~EMGFilter()
+Extractor::~Extractor()
 {
 }
 
 /// @brief Terminate the thread (if the class is running on a seperate thread).
-void EMGFilter::terminate()
+void Extractor::terminate()
 {
-  EMGFilter::terminated = true;
+  Extractor::terminated = true;
 }
 
-bool EMGFilter::start(const char *port)
+bool Extractor::start(const char *port)
 {
   const std::lock_guard<std::mutex> lock(connectionMutex);
   sdr.setPort(port);
@@ -40,9 +40,9 @@ bool EMGFilter::start(const char *port)
   return connected;
 }
 
-/// @brief Subroutine to fetch the data from the serialDataReceiver and filter the data.
+/// @brief Subroutine to fetch the data from the serialDataReceiver and extractor the data.
 /// @return 0 if interupted or finished.
-int EMGFilter::filterDataTask()
+int Extractor::filterDataTask()
 {
 
   std::vector<double> temp = std::vector<double>(dataCount, 0);
@@ -73,7 +73,7 @@ int EMGFilter::filterDataTask()
     if (elapsedRate.count() >= 1000)
     {
       startRate = currentTime;
-      filterRate = currentFilterRate;
+      extractRate = currentFilterRate;
       rawRate = currentRawSamples;
       currentFilterRate = 0;
       currentRawSamples = 0;
@@ -96,8 +96,8 @@ int EMGFilter::filterDataTask()
         currentRawSamples++;
       }
     }
-    // Target filter rate after limiting it to the max raw sample rate.
-    int tt = targetFilterRate;
+    // Target extractor rate after limiting it to the max raw sample rate.
+    int tt = targetExtractRate;
 
     if (rawRate > 0 && tt > rawRate)
     {
@@ -124,16 +124,16 @@ int EMGFilter::filterDataTask()
 
       raws.clear();
 
-      filterMutex.lock();
+      extractMutex.lock();
       dataWL = waveLength;
-      filterMutex.unlock();
+      extractMutex.unlock();
       // printf("A:%f, B:%f, C:%f, D:%f\n", waveLength.at(0), waveLength.at(1), waveLength.at(2), waveLength.at(3));
     }
 
     // Apply root mean square.
     if (elapsedFilter.count() >= (1e6 / tt))
     {
-      filterMutex.lock();
+      extractMutex.lock();
       currentFilterRate++;
       startFilter = currentTime;
       // Calculate the base RMS.
@@ -172,7 +172,7 @@ int EMGFilter::filterDataTask()
           saveData = false;
         }
       }
-      filterMutex.unlock();
+      extractMutex.unlock();
     }
   }
   if (sdr.closePort())

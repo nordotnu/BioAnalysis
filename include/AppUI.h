@@ -1,7 +1,7 @@
 #pragma once
 #include "UserInterface.h"
 #include "SerialDataReceiver.h"
-#include "EMGFilter.h"
+#include "Extractor.h"
 #include <filesystem>
 #include "implot.h"
 #include "math.h"
@@ -30,7 +30,7 @@ private:
   std::vector<std::string> labels;
 
 
-  EMGFilter filter;
+  Extractor extractor;
   std::thread *thread_filter;
   std::vector<const char *> availablePorts;
   std::vector<std::string> listPorts();
