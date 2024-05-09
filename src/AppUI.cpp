@@ -6,8 +6,8 @@ struct RollingBuffer
   ImVector<ImVec2> Data;
   RollingBuffer()
   {
-    Span = 10.0f;
-    Data.reserve(1000);
+    Span = 7.0f;
+    Data.reserve(100);
   }
   void AddPoint(float x, float y)
   {
@@ -45,7 +45,7 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD, bool 
   if (ImPlot::BeginPlot("sEMG", ImVec2(-1, 400)))
   {
     ImPlot::SetupAxes(nullptr, nullptr, flags, flags);
-    ImPlot::SetupAxisLimits(ImAxis_X1, 0, 10, ImGuiCond_Always);
+    ImPlot::SetupAxisLimits(ImAxis_X1, 0, 7, ImGuiCond_Always);
     ImPlot::SetupAxisLimits(ImAxis_Y1, -100, 3500);
     ImPlot::PlotLine("A", &va.Data[0].x, &va.Data[0].y, va.Data.size(), 0, 0, 2 * sizeof(float));
     ImPlot::PlotLine("B", &vb.Data[0].x, &vb.Data[0].y, vb.Data.size(), 0, 0, 2 * sizeof(float));
@@ -55,17 +55,18 @@ void RealtimePlots(float valueA, float valueB, float valueC, float valueD, bool 
   }
 }
 
-AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), extractor()
+AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), extractor(), keybrd()
 {
   AppUI::dataType = 0;
   AppUI::lastSelected = 0;
   AppUI::trainingSamples = 100;
   AppUI::currentPort = 0;
   AppUI::votingCount = 1;
-  AppUI::triggerCount = 1;
+  AppUI::triggerCount = 50;
   AppUI::lastPrediction = -1;
   AppUI::prediction = 0;
   AppUI::act = 0;
+  AppUI::sendActive = false;
   std::vector<std::vector<double>> empty;
   AppUI::trainingData = std::vector<std::vector<std::vector<double>>>(5, empty);
   AppUI::triggers = std::vector<int>(5, 0);
@@ -104,6 +105,9 @@ void AppUI::recordingElement()
     ImGui::SameLine();
     if (ImGui::Button("Record Data") && !extractor.saveData)
       extractor.saveData = true;
+    if (ImGui::Button("Export Recordings") && !extractor.saveData)
+      exportRecordings();
+
     ImGui::SameLine();
     if (ImGui::Button("Train"))
     {
@@ -124,12 +128,14 @@ void AppUI::recordingElement()
     finger = finger < 4 ? finger + 1 : 0;
   }
 
-  if (ImGui::BeginTable("table", 3, ImGuiTableFlags_Borders))
+  if (ImGui::BeginTable("table", 4, ImGuiTableFlags_Borders))
   {
     ImGui::TableNextColumn();
     ImGui::Text("Finger");
     ImGui::TableNextColumn();
     ImGui::Text("Recorder Samples", ImGui::GetContentRegionAvail().x);
+    ImGui::TableNextColumn();
+    ImGui::Text("Key", ImGui::GetContentRegionAvail().x);
     ImGui::TableNextColumn();
     ImGui::Text("Trigger", ImGui::GetContentRegionAvail().x);
     for (int n = 0; n < 5; n++)
@@ -139,6 +145,9 @@ void AppUI::recordingElement()
       ImGui::RadioButton(labels.at(n).c_str(), &finger, n);
       ImGui::TableNextColumn();
       ImGui::Text("%d", trainingData.at(n).size());
+      ImGui::TableNextColumn();
+      const char *data = reinterpret_cast<const char *>(&n); // convert to a char pointer
+      ImGui::Combo(data, &(keybrd.keyMappings[n]),keybrd.keys.data(), keybrd.keys.size());
       ImGui::TableNextColumn();
       ImGui::ProgressBar((float)triggers.at(n) / (float)triggerCount);
       // ImGui::Text("%d/%d", triggers.at(n), triggerCount);
@@ -155,6 +164,7 @@ void AppUI::connect(const char *port)
     thr.detach();
   }
 }
+
 void AppUI::predictCurrent()
 {
   if (classifier.trained)
@@ -164,7 +174,6 @@ void AppUI::predictCurrent()
       ImGui::Text("Accuracy: %.2f ", classifier.accuracy);
       ImGui::SameLine();
     }
-
 
     extractor.extractMutex.lock();
     std::vector<double> combined;
@@ -180,6 +189,7 @@ void AppUI::predictCurrent()
     }
     if (lastPrediction != prediction)
     {
+
       lastPrediction = prediction;
       triggers = std::vector<int>(5, 0);
     }
@@ -192,21 +202,24 @@ void AppUI::predictCurrent()
         {
           act = i;
           triggers = std::vector<int>(5, 0);
+          if (sendActive)
+            keybrd.sendKey(keybrd.keyMappings[act]);
           break;
         }
       }
     }
 
-
-    ImGui::Text("Voting Count:");
-    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200.0);
     ImGui::Text("Prediction: %s", labels.at(prediction).c_str());
+    ImGui::SameLine(200);
     ImGui::Text("P Trigger: %s", labels.at(act).c_str());
-    ImGui::SameLine();
+    ImGui::SameLine(400);
     ImGui::Text("Trigger Count:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
     ImGui::SliderInt("     ", &triggerCount, 1, 100);
+    ImGui::SameLine();
+    ImGui::Checkbox("Active", &sendActive);
   }
 }
 /// @brief Update the contents.
@@ -238,6 +251,7 @@ void AppUI::updateSignalPlotTab()
   {
     extractor.terminate();
   }
+
   ImGui::SameLine();
   ImGui::Text("Capturing %d samples per second", extractor.rawRate);
 
@@ -319,7 +333,6 @@ AppUI::~AppUI()
 void AppUI::shutdown()
 {
   // filter.terminate();
-
   UserInterface::shutdown();
 }
 

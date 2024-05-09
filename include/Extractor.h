@@ -30,7 +30,7 @@ public:
   bool connected;
   int bufferSize;
 
-  Extractor(int dataCount = 4, int targetExtractRate = 100, int targetRawRate = 500, int bufferSize = 9);
+  Extractor(int dataCount = 4, int targetExtractRate = 5, int targetRawRate = 500, int bufferSize = 9);
   ~Extractor();
 
   bool start(const char *port);

@@ -170,9 +170,6 @@ int Extractor::filterDataTask()
         combined.reserve(dataRMS.size() + dataWL.size());
         combined.insert(combined.end(), dataRMS.begin(), dataRMS.end());
         combined.insert(combined.end(), dataWL.begin(), dataWL.end());
-        if (buffer.size() < bufferSize){
-          buffer.push_back(combined);
-        }
         if (saveData)
         {
           savedData.push_back(combined);

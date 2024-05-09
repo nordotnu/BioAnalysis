@@ -10,6 +10,8 @@
 #include <iostream>
 #include <vector>
 #include <Classifier.h>
+#include "Keyboard.h"
+
 
 class AppUI : public UserInterface
 {
@@ -24,7 +26,7 @@ private:
   int lastPrediction;
   int prediction;
   int act;
-
+  bool sendActive;
 
   std::vector<int> triggers;
   std::vector<std::vector<std::vector<double>>> trainingData;
@@ -36,12 +38,14 @@ private:
   std::vector<const char *> availablePorts;
   std::vector<std::string> listPorts();
   Classifier classifier;
+  Keyboard keybrd;
   void recordingElement();
   void predictCurrent();
   void updateConnectionTab();
   void updateSignalPlotTab();
   void exportRecordings();
   void connect(const char *port);
+  void sendKey(int key);
 
 public:
   AppUI(GLFWwindow *window, const char *glsl_version);
