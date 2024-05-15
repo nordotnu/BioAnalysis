@@ -59,7 +59,7 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), extra
 {
   AppUI::dataType = 0;
   AppUI::lastSelected = 0;
-  AppUI::trainingSamples = 100;
+  AppUI::trainingSamples = 50;
   AppUI::currentPort = 0;
   AppUI::votingCount = 1;
   AppUI::triggerCount = 50;
@@ -105,8 +105,10 @@ void AppUI::recordingElement()
     ImGui::SameLine();
     if (ImGui::Button("Record Data") && !extractor.saveData)
       extractor.saveData = true;
+    /*
     if (ImGui::Button("Export Recordings") && !extractor.saveData)
       exportRecordings();
+    */
 
     ImGui::SameLine();
     if (ImGui::Button("Train"))
@@ -316,7 +318,7 @@ void AppUI::updateConnectionTab()
   ImGui::SameLine();
   ImGui::Combo(" ", &currentPort, availablePorts.data(), availablePorts.size());
   ImGui::SameLine();
-  if (ImGui::Button("Open Port") && availablePorts.size())
+  if (ImGui::Button("Open Port" ) && availablePorts.size())
   {
     extractor.connectionMutex.unlock();
     connect(availablePorts[currentPort]);

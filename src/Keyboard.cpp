@@ -12,33 +12,26 @@ Keyboard::Keyboard()
 void Keyboard::sendKey(int key)
 {
   unsigned int keycode = XKeysymToKeycode(display, keyCodes[key]);
-  if (key == 0)
-  {
-    unsigned int code = XKeysymToKeycode(display, keyCodes[last]);
-    XTestFakeKeyEvent(display, code, False, 0);
-    XFlush(display);
-    return;
-  }
-  if (last == -1)
-  {
-    last = key;
-    XTestFakeKeyEvent(display, keycode, True, 0);
-    XFlush(display);
-    return;
-  }
 
+  if (key == 0 && last != 0)
+  {
+    for (size_t i = 0; i < keyCodes.size(); i++)
+    {
+      unsigned int code = XKeysymToKeycode(display, keyCodes[i]);
+      XTestFakeKeyEvent(display, code, False, 0);
+      XFlush(display);
+    }
+    last = key;
+    return;
+  }
   if (key != last)
   {
-
-    unsigned int code = XKeysymToKeycode(display, keyCodes[last]);
-    XTestFakeKeyEvent(display, code, False, 0);
-
-    XFlush(display);
+    unsigned int lastCode = XKeysymToKeycode(display, keyCodes[last]);
+    XTestFakeKeyEvent(display, lastCode, False, 10);
     XTestFakeKeyEvent(display, keycode, True, 0);
     last = key;
-
-    XFlush(display);
   }
+    XFlush(display);
 
   // AppUI::display = XOpenDisplay(NULL);
 }
