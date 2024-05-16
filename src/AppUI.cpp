@@ -105,10 +105,10 @@ void AppUI::recordingElement()
     ImGui::SameLine();
     if (ImGui::Button("Record Data") && !extractor.saveData)
       extractor.saveData = true;
-    /*
+
+    ImGui::SameLine();
     if (ImGui::Button("Export Recordings") && !extractor.saveData)
       exportRecordings();
-    */
 
     ImGui::SameLine();
     if (ImGui::Button("Train"))
@@ -149,7 +149,7 @@ void AppUI::recordingElement()
       ImGui::Text("%d", trainingData.at(n).size());
       ImGui::TableNextColumn();
       const char *data = reinterpret_cast<const char *>(&n); // convert to a char pointer
-      ImGui::Combo(data, &(keybrd.keyMappings[n]),keybrd.keys.data(), keybrd.keys.size());
+      ImGui::Combo(data, &(keybrd.keyMappings[n]), keybrd.keys.data(), keybrd.keys.size());
       ImGui::TableNextColumn();
       ImGui::ProgressBar((float)triggers.at(n) / (float)triggerCount);
       // ImGui::Text("%d/%d", triggers.at(n), triggerCount);
@@ -174,7 +174,7 @@ void AppUI::predictCurrent()
     if (classifier.accuracy > 0)
     {
       ImGui::Text("Accuracy: %.2f ", classifier.accuracy);
-      ImGui::SameLine();
+      // ImGui::SameLine();
     }
 
     extractor.extractMutex.lock();
@@ -318,7 +318,7 @@ void AppUI::updateConnectionTab()
   ImGui::SameLine();
   ImGui::Combo(" ", &currentPort, availablePorts.data(), availablePorts.size());
   ImGui::SameLine();
-  if (ImGui::Button("Open Port" ) && availablePorts.size())
+  if (ImGui::Button("Open Port") && availablePorts.size())
   {
     extractor.connectionMutex.unlock();
     connect(availablePorts[currentPort]);

@@ -6,18 +6,13 @@ Extractor::Extractor(int dataCount, int targetExtractRate, int targetRawRate, in
   Extractor::targetExtractRate = targetExtractRate;
   Extractor::targetRawRate = targetRawRate;
   Extractor::terminated = true;
-  Extractor::calibrated = false;
+  Extractor::calibrated = true;
   Extractor::saveData = false;
   Extractor::connected = false;
   Extractor::bufferSize = bufferSize;
 
   extractRate = 0;
   rawRate = 0;
-  
-  
-
-
-
   dataRMS = std::vector<double>(dataCount, 0);
   dataRaw = std::vector<double>(dataCount, 0);
   dataWL = std::vector<double>(dataCount, 0);
@@ -159,25 +154,25 @@ int Extractor::filterDataTask()
         dataRMS.clear();
         for (size_t i = 0; i < dataCount; i++)
         {
-          double value = sqrt(temp.at(i) / count) / calibrationData.at(i);
+          double value = sqrt(temp.at(i) / count)/* / calibrationData.at(i)*/;
           dataRMS.push_back(value);
           temp.at(i) = 0;
         }
       }
       count = 0;
 
-        std::vector<double> combined;
-        combined.reserve(dataRMS.size() + dataWL.size());
-        combined.insert(combined.end(), dataRMS.begin(), dataRMS.end());
-        combined.insert(combined.end(), dataWL.begin(), dataWL.end());
-        if (saveData)
+      std::vector<double> combined;
+      combined.reserve(dataRMS.size() + dataWL.size());
+      combined.insert(combined.end(), dataRMS.begin(), dataRMS.end());
+      combined.insert(combined.end(), dataWL.begin(), dataWL.end());
+      if (saveData)
+      {
+        savedData.push_back(combined);
+        if (savedData.size() >= saveDataSize)
         {
-          savedData.push_back(combined);
-          if (savedData.size() >= saveDataSize)
-          {
-            saveData = false;
-          }
+          saveData = false;
         }
+      }
       extractMutex.unlock();
     }
   }
