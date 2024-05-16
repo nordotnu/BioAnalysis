@@ -72,7 +72,6 @@ AppUI::AppUI(GLFWwindow *window, const char *glsl_version) : classifier(), extra
   AppUI::triggers = std::vector<int>(5, 0);
 
   AppUI::finger = 0;
-
   AppUI::labels = {"Resting", "Index", "Middle", "Ring", "Pinky"};
 
   UserInterface::init(window, glsl_version);
@@ -130,7 +129,7 @@ void AppUI::recordingElement()
     finger = finger < 4 ? finger + 1 : 0;
   }
 
-  if (ImGui::BeginTable("table", 4, ImGuiTableFlags_Borders))
+  if (ImGui::BeginTable("table", 5, ImGuiTableFlags_Borders))
   {
     ImGui::TableNextColumn();
     ImGui::Text("Finger");
@@ -138,6 +137,8 @@ void AppUI::recordingElement()
     ImGui::Text("Recorder Samples", ImGui::GetContentRegionAvail().x);
     ImGui::TableNextColumn();
     ImGui::Text("Key", ImGui::GetContentRegionAvail().x);
+    ImGui::TableNextColumn();
+    ImGui::Text("Probability", ImGui::GetContentRegionAvail().x);
     ImGui::TableNextColumn();
     ImGui::Text("Trigger", ImGui::GetContentRegionAvail().x);
     for (int n = 0; n < 5; n++)
@@ -150,6 +151,8 @@ void AppUI::recordingElement()
       ImGui::TableNextColumn();
       const char *data = reinterpret_cast<const char *>(&n); // convert to a char pointer
       ImGui::Combo(data, &(keybrd.keyMappings[n]), keybrd.keys.data(), keybrd.keys.size());
+      ImGui::TableNextColumn();
+      ImGui::ProgressBar(probs[n < 4 ? n + 1 : 0]);
       ImGui::TableNextColumn();
       ImGui::ProgressBar((float)triggers.at(n) / (float)triggerCount);
       // ImGui::Text("%d/%d", triggers.at(n), triggerCount);
@@ -184,7 +187,9 @@ void AppUI::predictCurrent()
     combined.insert(combined.end(), extractor.dataWL.begin(), extractor.dataWL.end());
 
     extractor.extractMutex.unlock();
-    int pred = classifier.predict(combined);
+    int pred = classifier.predict(combined, probs);
+    printf("%f, %f, %f, %f, %f\n", probs[0], probs[1], probs[2], probs[3], probs[4]);
+
     if (pred >= 0 && pred < 5)
     {
       prediction = pred;

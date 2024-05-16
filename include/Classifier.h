@@ -25,7 +25,7 @@ public:
   void minMaxScale();
   bool loadModel();
   bool saveModel();
-  int predict(std::vector<double> data);
+  int predict(std::vector<double> data, double* probs = nullptr);
   std::tuple<std::vector<std::vector<int>>, std::vector<std::vector<int>>, std::vector<int>, std::vector<int>> split_data(const std::vector<std::vector<int>> &X,
                                                                                                                                      const std::vector<int> &y,
                                                                                                                                      double test_size, int random_state);

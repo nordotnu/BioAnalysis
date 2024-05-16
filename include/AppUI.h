@@ -31,6 +31,7 @@ private:
   std::vector<int> triggers;
   std::vector<std::vector<std::vector<double>>> trainingData;
   std::vector<std::string> labels;
+  double probs[5];
 
 
   Extractor extractor;

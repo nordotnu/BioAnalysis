@@ -28,7 +28,7 @@ Classifier::Classifier()
 
 Classifier::~Classifier()
 {
-  //svm_free_and_destroy_model(&model);
+  // svm_free_and_destroy_model(&model);
 }
 
 void Classifier::train()
@@ -62,7 +62,7 @@ void Classifier::train()
   param.C = 100;
   param.shrinking = 1;
   param.cache_size = 200;
-  param.probability = 0;
+  param.probability = 1;
   param.eps = 0.001f;
   param.nr_weight = 0;
   param.gamma = 0.000125f;
@@ -114,7 +114,7 @@ bool Classifier::saveModel()
   return trained;
 }
 
-int Classifier::predict(std::vector<double> data)
+int Classifier::predict(std::vector<double> data, double *probs)
 {
   if (!trained)
     return -1;
@@ -125,8 +125,15 @@ int Classifier::predict(std::vector<double> data)
     data_node[j].value = (double)data[j];
   }
   data_node[data.size()].index = -1;
-
-  double prediction = svm_predict(model, data_node);
+  double prediction = 0;
+  if (probs != nullptr)
+  {
+    prediction = svm_predict_probability(model, data_node, probs);
+  }
+  else
+  {
+    prediction = svm_predict(model, data_node);
+  }
 
   delete[] data_node;
   return (int)prediction;
