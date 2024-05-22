@@ -188,7 +188,6 @@ void AppUI::predictCurrent()
 
     extractor.extractMutex.unlock();
     int pred = classifier.predict(combined, probs);
-    printf("%f, %f, %f, %f, %f\n", probs[0], probs[1], probs[2], probs[3], probs[4]);
 
     if (pred >= 0 && pred < 5)
     {
